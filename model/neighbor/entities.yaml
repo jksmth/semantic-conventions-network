@@ -1,0 +1,70 @@
+---
+file_format: definition/2
+entities:
+- type: network.neighbor
+  stability: development
+  brief: >
+    A control-plane adjacency, session, or peer: a BGP peer, OSPF/IS-IS neighbour, BFD session, LACP partner, LLDP neighbour, or PIM neighbour.
+  note: |
+    The generic control-plane peer entity — one shape for every
+    adjacency/session protocol, rather than a separate model per
+    protocol (README "generic neighbour"). This deliberately avoids
+    recreating each vendor's per-protocol object tree.
+
+    Identity and scoping:
+    - Full identity is the tuple (`network.device.id`,
+      `network.neighbor.protocol`, `network.neighbor.id`). The owning
+      `network.device` MUST be present in the same Resource.
+    - `protocol` is identifying because the same peer is frequently an
+      adjacency under two protocols at once (e.g. a BGP session
+      protected by a BFD session to the same address).
+    - Identifying attributes MUST NOT change during the life of the
+      adjacency.
+
+    State (README §State Modelling, Principle 10; see docs/conventions.md, state modelling):
+    - `network.neighbor.state` carries the normalized cross-protocol
+      health value; `network.neighbor.native_state` preserves the
+      verbatim protocol term. See the network-common mapping table.
+    - Transition events use the shared event envelope (the
+      `network.neighbor.state.changed` refinement); the
+      `network.neighbor.state_changes` counter
+      gives the post-restart-reconstructable count.
+
+    Relationship to a forwarding context:
+    - A neighbour formed inside a VRF/bridge-domain is scoped to that
+      `network.instance`; carry `network.instance.name` alongside when
+      the adjacency is not in the default context (the instance entity
+      is expected in the same Resource).
+
+    Scope: adjacency/session protocols whose state is
+    adjacency-shaped belong here. Session-style protocols whose
+    interesting attributes are not (PPPoE/PPP, IKE/IPsec SAs, BNG
+    subscriber sessions) are deferred to a future network-session
+    package; they MAY still report a coarse `state`/`native_state`
+    here, but their session-specific identity bundles are not modelled
+    on `network.neighbor`.
+  identity:
+  - ref: network.neighbor.id
+  - ref: network.neighbor.protocol
+  description:
+  - ref: network.neighbor.address
+    requirement_level: recommended
+  - ref: network.neighbor.asn
+    requirement_level:
+      conditionally_required: when the neighbour protocol is BGP
+  - ref: network.address_family
+    requirement_level: recommended
+  - ref: network.neighbor.state
+    requirement_level: recommended
+  - ref: network.neighbor.native_state
+    requirement_level: recommended
+  # Segment Routing adjacency SID (per IGP adjacency)
+  - ref: network.sr.adjacency_sid
+    requirement_level: opt_in
+  # Vendor refinement (illustrative) — the VTP management domain advertised by
+  # a CDP neighbour, the lone CDP field with no vendor-neutral equivalent.
+  # Defined in model/cisco/; expected only when network.device.vendor.name=cisco
+  # AND network.neighbor.protocol=cdp. In a federated deployment this ref lives
+  # in the vendor's own registry, which re-opens this entity by schema_url.
+  - ref: cisco.cdp.vtp_domain
+    requirement_level: opt_in

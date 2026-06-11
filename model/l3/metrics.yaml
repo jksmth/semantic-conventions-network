@@ -1,0 +1,45 @@
+---
+file_format: definition/2
+metrics:
+- name: network.l3.adjacency.entries
+  stability: development
+  brief: >
+    Number of ARP/ND resolution entries currently present.
+  note: |
+    The L3 twin of the authored `network.l2.mac.entries` — the IP→MAC
+    resolution table (ARP for IPv4, ND for IPv6) that sits between the L2 MAC
+    FDB (MAC→port) and the L3 RIB (prefix→next-hop-IP). Entries are a COUNT,
+    never per-entry entities: 10^4+ on a busy distribution
+    switch, bounded by hosts/traffic and churning constantly.
+
+    Association mirrors `network.l2.mac.entries`:
+    - Per routed interface / SVI, associate with `network.interface` (the
+      ARP/ND cache is per-L3-interface).
+    - For a per-VRF aggregate, associate with `network.instance`.
+    The owning `network.device` is expected in the same Resource.
+
+    Dimensions:
+    - `network.type` (upstream, Stable) — `ipv4` = ARP, `ipv6` = ND. AF is a
+      DIMENSION, one table not two objects (the resolved address is a
+      data-plane address, so its IP version is `network.type`, NOT the
+      control-plane `network.address_family`).
+    - `network.l3.adjacency.entry.type` — dynamic / static / control_plane
+      (control_plane = EVPN-synced; mirrors the L2 FDB entry type).
+    - `network.l3.adjacency.state` — per-state occupancy, so the
+      `incomplete` (unresolved / next-hop-down) count is a first-class series.
+
+    The configured table ceiling, when set, exhausts as a forwarding resource;
+    reported via the future `network.component.utilization` gauge
+    with an `adjacency` resource value, not here.
+  instrument: updowncounter
+  unit: "{entry}"
+  attributes:
+  - ref: network.type
+    requirement_level: recommended
+  - ref: network.l3.adjacency.entry.type
+    requirement_level: recommended
+  - ref: network.l3.adjacency.state
+    requirement_level: recommended
+  entity_associations:
+  - network.interface
+  - network.instance

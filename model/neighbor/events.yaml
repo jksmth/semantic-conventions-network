@@ -1,0 +1,42 @@
+---
+file_format: definition/2
+
+# network-neighbor events (events-envelope design). The control-plane
+# adjacency/session transition — the single most
+# alerted-on network event after a link flap (bgpBackwardTransition, OSPF
+# adjacency drop, BFD bounce, LACP partner loss). It refines the shared
+# `network.state.changed` base event; the emitted name is its own
+# `network.neighbor.state.changed`, inheriting the whole envelope. The
+# post-restart-reconstructable COUNT of these transitions is the existing
+# `network.neighbor.state_changes` counter; this event is the
+# point-in-time transition the counter and the current-state gauge cannot
+# reconstruct.
+event_refinements:
+- id: network.neighbor.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    A control-plane neighbour/session changed state — a BGP session reset/established (bgpBackwardTransition), an OSPF/IS-IS adjacency up/down, a BFD bounce, a LACP partner or LLDP neighbour gain/loss, a PIM neighbour change. One event for every adjacency protocol, the transition the `network.neighbor.state_changes` counter only totals.
+  note: |
+    `network.event.state.dimension=operational` (an adjacency up/down is a
+    run-time transition, not an operator action). The verbatim native
+    endpoints go in `network.event.state.previous`/`current` — the protocol's
+    own term, e.g. "Established"→"Idle" (BGP), "Full"→"Down" (OSPF),
+    "Up"→"Down" (BFD/LACP) — consistent with the normalized+native pattern
+    (Principle 10; see docs/conventions.md, state modelling); the coarse
+    normalized value stays on the `network.neighbor.state` gauge.
+
+    Carry `network.alarm.cause=connectivity_lost` (opt-in) on the down
+    transition when the drop is to be treated as a fault rather than a
+    planned reset.
+  entity_associations:
+  - network.neighbor
+  attributes:
+  - ref: network.event.state.previous
+    requirement_level: recommended
+    note: >
+      The verbatim protocol state transitioned FROM (e.g. "Established", "Full", "Up", "2-Way").
+  - ref: network.event.state.current
+    requirement_level: required
+    note: >
+      The verbatim protocol state transitioned TO (e.g. "Idle", "Down", "Init").

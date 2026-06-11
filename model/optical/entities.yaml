@@ -1,0 +1,52 @@
+---
+file_format: definition/2
+entities:
+- type: network.optical.channel
+  stability: development
+  brief: >
+    An optical carrier (channel/lane) transmitted or received by a transceiver on an interface — a grey/direct-detect client optic or a coherent DWDM line carrier.
+  note: |
+    The single `network.*` optical entity. It models the optical
+    *carrier* (the light), which `hw.*` has no concept of; the optic itself
+    (the pluggable transceiver) is a `hw.*` FRU referenced by `hw.id`, and
+    the port is the existing `network.interface`.
+
+    Relationships (reusing existing identifiers, no new relationship keys):
+    - `network.interface.id` — the port the carrier runs on. The owning
+      `network.interface` and `network.device` are expected in the same
+      Resource. Correlates light levels with the port.
+    - `hw.id` — the transceiver hardware FRU, whose environmental telemetry
+      (temperature, voltage, status, serial) is `hw.*`, not
+      redefined here. See docs/architecture.md (namespace layering).
+
+    Stable anchor: the deferred PON-access and DWDM-line-system
+    optical domains wrap and reference this entity (per-ONT burst RSSI
+    attaches around it; amplifiers/degrees/OMS/OTS reference it) — they do
+    not reshape it.
+
+    Identity is scoped by device: the full identity is
+    (`network.device.id`, `network.optical.channel.id`). See
+    docs/entity-model.md (sub-entity identity).
+  identity:
+  - ref: network.optical.channel.id
+  description:
+  - ref: network.optical.channel.type
+    requirement_level: recommended
+  - ref: network.interface.id
+    requirement_level: recommended
+    brief: >
+      The interface (port) this optical carrier runs on. The owning `network.interface` is expected in the same Resource.
+  - ref: hw.id
+    requirement_level: opt_in
+    brief: >
+      The transceiver hardware FRU (pluggable) carrying this channel. Environmental telemetry (temperature/voltage/status) is reported under `hw.*` against this id.
+  - ref: network.optical.frequency
+    requirement_level: opt_in
+  - ref: network.optical.wavelength
+    requirement_level: opt_in
+  - ref: network.optical.grid
+    requirement_level: opt_in
+  - ref: network.optical.modulation
+    requirement_level: opt_in
+  - ref: network.optical.fec.type
+    requirement_level: opt_in

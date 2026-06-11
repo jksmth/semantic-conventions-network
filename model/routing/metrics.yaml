@@ -1,0 +1,115 @@
+---
+file_format: definition/2
+metrics:
+- name: network.routing.routes
+  stability: development
+  brief: >
+    Number of routes in the RIB, by installing protocol/source, address family, and selection stage.
+  note: |
+    The current route count — routes are a COUNT, never per-route
+    entities; a full Internet table is ~1M routes.
+
+    Dimensions:
+    - `network.routing.protocol` — installing protocol or source
+      (incl. static/connected/local/aggregate).
+    - `network.address_family` — AFI/SAFI (incl. `l2vpn_evpn`).
+    - `network.routing.route.state` — total / active(best) /
+      received / advertised.
+
+    Associates with `network.instance`: route counts are per
+    forwarding/routing context (the default VRF, an L3VPN, …), so the
+    owning `network.instance` (and its `network.device`) are expected
+    in the same Resource.
+  instrument: updowncounter
+  unit: "{route}"
+  attributes:
+  - ref: network.routing.protocol
+    requirement_level: required
+  - ref: network.address_family
+    requirement_level: recommended
+  - ref: network.routing.route.state
+    requirement_level: recommended
+  entity_associations:
+  - network.instance
+
+- name: network.routing.ecmp.routes
+  stability: development
+  brief: >
+    Number of FIB routes by their ECMP width — the path-count distribution that answers "how many prefixes have N equal-cost paths?".
+  note: |
+    The ECMP/load-balance health signal a Clos fabric's spine layer exists to
+    provide, and the one routing gap the core-router and dc-fabric examples
+    flagged. Routes are bucketed by `network.routing.ecmp.width` (bounded
+    fan-out, 1..N) and `network.address_family`; summing the buckets recovers
+    the FIB route total (`network.routing.routes` with `route.state=fib`).
+
+    Operationally the `width=1` bucket is the count of single-path (unprotected)
+    prefixes, and losing an ECMP member moves routes from the width=k bucket
+    into width=k-1 — so "did losing spine-3 rebalance the paths?" is visible
+    without any per-prefix series. Counting ROUTES (not the deduplicated
+    next-hop-groups) is the operator-facing view and is derivable from both the
+    OpenConfig AFT (ipv4/ipv6-entry -> next-hop-group) and the legacy
+    IP-FORWARD-MIB (rows grouped by destination/prefix). The next-hop-group
+    TABLE-fill itself is `network.component.utilization` (resource `ecmp` /
+    `next_hop_group`), a distinct concern from this width distribution.
+
+    Associates with `network.instance` (the routing/forwarding context).
+  instrument: updowncounter
+  unit: "{route}"
+  attributes:
+  - ref: network.routing.ecmp.width
+    requirement_level: required
+  - ref: network.address_family
+    requirement_level: recommended
+  entity_associations:
+  - network.instance
+
+- name: network.routing.updates
+  stability: development
+  brief: >
+    Total routing updates (advertisements + withdrawals) processed, by protocol, address family, direction, and change type.
+  note: |
+    The route-churn counter — the primary routing-instability
+    signal a flapping peer or deaggregation event produces, which the static
+    `network.routing.routes` count cannot show. Counts ROUTE CHANGES, not
+    protocol PDUs (`network.protocol.messages` counts the latter).
+
+    Dimensions:
+    - `network.routing.protocol` — installing protocol/source.
+    - `network.address_family` — AFI/SAFI.
+    - `network.io.direction` — received (from peers) vs transmit (advertised).
+    - `network.routing.update.type` — advertisement vs withdrawal.
+
+    Associates with `network.instance` (per routing context); MAY also
+    associate with `network.neighbor` where per-peer churn is bounded and
+    useful.
+  instrument: counter
+  unit: "{update}"
+  attributes:
+  - ref: network.routing.protocol
+    requirement_level: required
+  - ref: network.address_family
+    requirement_level: recommended
+  - ref: network.io.direction
+    requirement_level: recommended
+  - ref: network.routing.update.type
+    requirement_level: recommended
+  entity_associations:
+  - network.instance
+  - network.neighbor
+
+- name: network.routing.convergence.duration
+  stability: development
+  brief: >
+    Duration of a reconvergence phase (SPF run, BGP best-path walk, or FIB download).
+  note: >
+    "How long did the network take to reconverge after that link failed" — the backbone SLA question with no prior home. `network.routing.convergence.phase` selects SPF vs best-path vs FIB-download. A gauge of the most-recent run; per-protocol via `network.routing.protocol`. Associates with `network.instance`.
+  instrument: gauge
+  unit: "s"
+  attributes:
+  - ref: network.routing.convergence.phase
+    requirement_level: required
+  - ref: network.routing.protocol
+    requirement_level: recommended
+  entity_associations:
+  - network.instance

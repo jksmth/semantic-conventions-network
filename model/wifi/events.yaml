@@ -1,0 +1,107 @@
+---
+file_format: definition/2
+
+# network-wifi events (events-envelope design). The wireless events named in
+# the registry (model/wifi/registry.yaml
+# "Wireless EVENTS (associate/disassociate/roam, DFS radar, RRM channel/power
+# change, rogue/interference)"; "an RRM/DFS channel change is a deferred
+# event"). Two refinements authored here:
+#
+#   - network.wifi.ap.state.changed — an AP changed CAPWAP join state
+#     (discovering→joining→run→disconnected); refines `network.state.changed`.
+#     Pairs with `network.wifi.ap.state` + `network.wifi.ap.native_state`.
+#     Measured at the WLC over CAPWAP (producer≠subject): the AP is
+#     the subject `network.device`.
+#   - network.wifi.dfs.radar_detected — a radio detected DFS radar and must
+#     vacate the channel; refines `network.alarm` (cause=`signal_loss`).
+#     Associates `network.wifi.radio`.
+#
+# DEFERRED (third category — designed with the attachment-point-move /
+# MAC-move family): client associate/disassociate and ROAM are observation
+# RECORDS (they name a station MAC + its old/new BSS), the wireless sibling of
+# `network.l2.mac.moved`, not state/alarm events. RRM channel/power change and
+# rogue/interference detection are further follow-ons.
+event_refinements:
+- id: network.wifi.ap.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    An access point changed its controller-join (CAPWAP) state — discovering, joining, downloading, run, or disconnected. The AP up/down the WLC sees that the `network.wifi.ap.state` gauge shows but cannot reconstruct after a restart (a flapping AP / repeated rejoin is a top wireless complaint).
+  note: |
+    `network.event.state.dimension=operational`. Native endpoints in
+    `network.event.state.previous`/`current` carry the verbatim CAPWAP state
+    (`network.wifi.ap.native_state`); the coarse normalized value stays on
+    `network.wifi.ap.state`. Associates the AP's
+    `network.device` (the subject); the WLC is the `network.observer`
+    (`collection.method=capwap`).
+  entity_associations:
+  - network.device
+  attributes:
+  - ref: network.event.state.current
+    requirement_level: required
+    note: The verbatim new AP join state (e.g. "disconnected").
+  - ref: network.event.state.previous
+    requirement_level: recommended
+    note: The verbatim prior AP join state (e.g. "run").
+
+- id: network.wifi.dfs.radar_detected
+  ref: network.alarm
+  stability: development
+  brief: >
+    A radio detected DFS radar on its operating channel and must vacate it (the 5 GHz regulatory channel-availability-check / in-service-monitoring requirement) — an involuntary channel change that drops every station on the BSS. The single most disruptive RF event on a DFS channel.
+  note: |
+    `network.alarm.cause=signal_loss` (the channel became unusable) with
+    `network.alarm.category=environmental`. `network.alarm.specific_problem`
+    carries the verbatim detail (the example string on the base envelope,
+    "DFS radar detected on channel 52"). Associates `network.wifi.radio` (the
+    affected radio, by `network.wifi.radio.id`); the channel being vacated is
+    the radio's `network.wifi.radio.channel`. The subsequent RRM channel
+    change is a separate deferred event.
+  entity_associations:
+  - network.wifi.radio
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: Always `signal_loss` for this refinement.
+  - ref: network.alarm.specific_problem
+    requirement_level: recommended
+    note: The verbatim detection detail (e.g. "DFS radar detected on channel 52").
+  - ref: network.alarm.category
+    requirement_level: opt_in
+    note: Normally `environmental`.
+
+- id: network.wifi.station.roamed
+  ref: network.attachment.moved
+  stability: development
+  brief: >
+    A station roamed from one BSS to another — the wireless member of the move family (the station-MAC changed its BSSID locator). An observation RECORD naming the station + its old/new BSSID, the RF sibling of `network.l2.mac.moved` / `network.evpn.mac.moved`.
+  note: |
+    A move RECORD — NOT a `network.state.changed` (a station is a
+    count, transient and MAC-randomised, not an entity). Carries the
+    `network.wifi.station.mac`, the BSS it roamed FROM as
+    `network.wifi.station.previous_bss.bssid` and the BSS it roamed TO as the
+    reused `network.wifi.bss.bssid`. Inherits `network.attachment.sequence`
+    (roam count for this station) and `network.attachment.duplicate` (`true` ⇒
+    a sticky-client / ping-pong roam between two APs, not a clean handoff).
+    Associates `network.wifi.bss` / `network.device` (the AP joined); measured
+    at the WLC over CAPWAP (producer≠subject). 802.11r/k/v fast-roam detail is
+    carried verbatim if present.
+  entity_associations:
+  - network.wifi.bss
+  - network.device
+  attributes:
+  - ref: network.wifi.station.mac
+    requirement_level: required
+    note: The station that roamed.
+  - ref: network.wifi.station.previous_bss.bssid
+    requirement_level: required
+    note: The BSSID the station roamed FROM (the previous locator).
+  - ref: network.wifi.bss.bssid
+    requirement_level: required
+    note: The BSSID the station roamed TO (the current locator).
+  - ref: network.attachment.sequence
+    requirement_level: recommended
+    note: The roam count for this station.
+  - ref: network.attachment.duplicate
+    requirement_level: recommended
+    note: "`true` ⇒ a ping-pong / sticky-client roam, not a clean handoff."

@@ -1,0 +1,215 @@
+---
+file_format: definition/2
+
+# network-stp — Spanning Tree Protocol (STP/RSTP/MSTP/PVST) model.
+#
+# STP is the L2 control plane and does NOT fit the routing/adjacency model:
+#   - not network.routing  (no RIB / routes / AFI-SAFI)
+#   - not network.neighbor (no per-peer session FSM; the "designated bridge"
+#     is a computed property of the local port, not a session)
+#   - not network.instance (that is a forwarding context; an STP instance is
+#     a control-plane topology computation)
+#   - not network.interface.role (topological purpose ≠ STP port role)
+#
+# The distinctive shape — N independent instances per device, each electing a
+# root and assigning a role+state to every port, scoped to a VLAN set — is, in
+# practice, unique to STP and its variants (TRILL/SPB are all-active IS-IS
+# multipath: no blocking, no root election, so they do NOT share it). Kept
+# STP-specific; the reusable element is the normalized+native
+# role/state *pattern* (shared with network.neighbor), not a shared entity.
+#
+# Prior art: IEEE 802.1Q (incl. MSTP) / 802.1D, BRIDGE-MIB / RSTP-MIB /
+# MSTP-MIB, OpenConfig openconfig-spanning-tree.
+
+attributes:
+# --- Instance identity / bridge-level state ----------------------------
+- key: network.stp.instance.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of the spanning-tree instance, unique within the device.
+  note: |
+    Full identity is the pair (`network.device.id`,
+    `network.stp.instance.id`). The owning `network.device` is expected
+    in the same Resource. See docs/entity-model.md (sub-entity identity).
+
+    One instance per spanning tree the device runs:
+    - RSTP / classic STP: a single instance — use `cist` (or `0`).
+    - MSTP: the CIST (`cist`/`0`) plus one per MST instance (`mst1`, …).
+    - PVST / Rapid-PVST: one instance per VLAN — use the VLAN id.
+  examples: ["cist", "0", "mst1", "100"]
+
+- key: network.stp.mode
+  type:
+    members:
+    - id: stp
+      value: "stp"
+      brief: Classic 802.1D Spanning Tree.
+      stability: development
+    - id: rstp
+      value: "rstp"
+      brief: Rapid Spanning Tree (802.1w).
+      stability: development
+    - id: mstp
+      value: "mstp"
+      brief: Multiple Spanning Tree (802.1s / 802.1Q).
+      stability: development
+    - id: pvst
+      value: "pvst"
+      brief: Per-VLAN Spanning Tree (PVST+).
+      stability: development
+    - id: rpvst
+      value: "rpvst"
+      brief: Rapid Per-VLAN Spanning Tree (Rapid-PVST+).
+      stability: development
+  stability: development
+  brief: The spanning-tree protocol variant the device is running.
+  note: >
+    Open enum, values normalized to lowercase. Custom values MAY be used.
+
+- key: network.stp.instance.priority
+  type: int
+  stability: development
+  brief: >
+    This bridge's configured priority for the instance (lower wins root election).
+  note: >
+    Per IEEE 802.1Q, a multiple of 4096 in the range 0–61440. Combined with the bridge MAC to form `network.stp.bridge.id`.
+  examples: [32768, 4096, 0]
+
+- key: network.stp.bridge.id
+  type: string
+  stability: development
+  brief: >
+    This bridge's bridge identifier for the instance (priority + MAC).
+  note: >
+    Compared against `network.stp.root.id` to determine whether this bridge is the root (`network.stp.is_root`).
+  examples: ["32768.00:1b:21:3c:4d:5e", "8192.0000.0c12.3456"]
+
+- key: network.stp.root.id
+  type: string
+  stability: development
+  brief: >
+    The bridge identifier of the elected root bridge for the instance.
+  examples: ["8192.00:1b:21:00:00:01", "0.0000.0c00.aaaa"]
+
+- key: network.stp.root.path_cost
+  type: int
+  stability: development
+  brief: >
+    The cumulative path cost from this bridge to the root bridge for the instance (0 when this bridge is the root).
+  examples: [0, 20000, 200000]
+
+- key: network.stp.root.port
+  type: string
+  stability: development
+  brief: >
+    The `network.interface.id` of the local port that is the root port for the instance (the port toward the root bridge).
+  note: >
+    Absent when this bridge is the root. References a `network.interface` on the same device.
+  examples: ["xe-0", "Ethernet1/1", "ae0"]
+
+- key: network.stp.is_root
+  type: boolean
+  stability: development
+  brief: >
+    Whether this bridge is the elected root bridge for the instance.
+
+- key: network.stp.instance.vlans
+  type: int[]
+  stability: development
+  brief: >
+    The VLAN ids mapped to this spanning-tree instance.
+  note: |
+    The MST-instance↔VLAN mapping (MSTP) lives here on
+    `network.stp.instance` — NOT on `network.instance`, which
+    is a forwarding context, not an STP instance. For a PVST instance
+    this is the single VLAN (equal to the instance id); for the CIST it
+    is the set of VLANs not assigned to any MSTI. Bounded by the device's
+    VLAN count — entity-appropriate. See docs/conventions.md (cardinality firewall).
+  examples: [[10, 20], [30], [1, 40, 41, 42]]
+
+# --- Per-port (per-instance) role + state ------------------------------
+# Dedicated enums, NOT normalized into network.neighbor.state:
+# a blocking/alternate port is healthy and intentional (the OSPF-2-Way
+# lesson) — mapping it to `down` would be wrong.
+# See docs/conventions.md (state modelling).
+- key: network.stp.port.role
+  type:
+    members:
+    - id: root
+      value: "root"
+      brief: The port toward the root bridge.
+      stability: development
+    - id: designated
+      value: "designated"
+      brief: The designated port for its segment.
+      stability: development
+    - id: alternate
+      value: "alternate"
+      brief: >
+        A backup path to the root, blocked to prevent a loop (healthy by design).
+      stability: development
+    - id: backup
+      value: "backup"
+      brief: >
+        A backup for a designated port on the same segment, blocked (healthy by design).
+      stability: development
+    - id: master
+      value: "master"
+      brief: >
+        MSTP boundary/master port at the edge of an MST region.
+      stability: development
+    - id: disabled
+      value: "disabled"
+      brief: The port is not participating in spanning tree.
+      stability: development
+  stability: development
+  brief: >
+    The port's spanning-tree role within the instance.
+  note: >
+    A role, not a health state — `alternate`/`backup` ports are blocked on purpose. Orthogonal to `network.interface.role` (topological purpose). Open enum, lowercase.
+
+- key: network.stp.port.state
+  type:
+    members:
+    - id: forwarding
+      value: "forwarding"
+      brief: Forwarding frames (RSTP/STP).
+      stability: development
+    - id: learning
+      value: "learning"
+      brief: Learning MACs, not yet forwarding.
+      stability: development
+    - id: discarding
+      value: "discarding"
+      brief: >
+        Discarding frames (RSTP — subsumes legacy blocking/listening).
+      stability: development
+    - id: blocking
+      value: "blocking"
+      brief: Blocked to prevent a loop (legacy STP).
+      stability: development
+    - id: listening
+      value: "listening"
+      brief: Processing BPDUs, not learning/forwarding (legacy STP).
+      stability: development
+    - id: disabled
+      value: "disabled"
+      brief: Administratively disabled for spanning tree.
+      stability: development
+    - id: broken
+      value: "broken"
+      brief: Errored/inconsistent (e.g. BPDU-guard / root-guard trip).
+      stability: development
+  stability: development
+  brief: >
+    The port's spanning-tree forwarding state within the instance.
+  note: >
+    Dedicated STP enum — NOT normalized to `up`/`down`, because a blocking/discarding port is the correct, healthy state for an alternate/backup port. The verbatim term is preserved in `network.stp.port.native_state`. Open enum, lowercase.
+
+- key: network.stp.port.native_state
+  type: string
+  stability: development
+  brief: >
+    The verbatim, vendor-native spanning-tree port state string.
+  examples: ["FWD", "BLK", "discarding", "LRN"]

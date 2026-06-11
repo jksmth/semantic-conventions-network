@@ -1,0 +1,146 @@
+---
+file_format: definition/2
+entities:
+- type: network.device
+  stability: development
+  brief: >
+    A managed network element: a router, switch, firewall, access point, optical node, or any device that participates in network forwarding, control, or observation.
+  note: |
+    `network.device` is the top-level entity in the network domain model.
+    All sub-entities (interface, module, component, instance, vlan, lag,
+    tunnel, optical channel) are scoped by their owning device — their full
+    identity is the pair (device.id, sub-entity.id).
+
+    Identity contract:
+    - `network.device.id` is stable, unique within deployment scope, and
+      invariant for the entity's lifetime.
+    - How a producer derives it and how independently-collected ids are
+      reconciled are operator/backend concerns, not convention requirements.
+
+    A network device MAY also be a host:
+    - A SONiC/Linux whitebox or virtual router is both a `host.*` and a
+      `network.device.*`. Emit both resource/entity sets and relate them
+      by shared host identity.
+    - `system.*`/`host.*` are primary for the OS/host stack;
+      `network.device.*` metrics are emitted only for element-specific
+      measures the host metrics don't capture.
+
+    Fixed-form profile:
+    - `chassis`/`module`/`component` are optional. On a fixed-form device
+      (CPE, pizza-box, VM), the `network.device` IS the inventory unit —
+      do not emit empty sub-entity shells. See docs/entity-model.md
+      (fixed-form profile).
+  identity:
+  - ref: network.device.id
+  description:
+  - ref: network.device.name
+    requirement_level: recommended
+  - ref: network.device.type
+    requirement_level: recommended
+  - ref: network.device.role
+    requirement_level: recommended
+  # Vendor
+  - ref: network.device.vendor.name
+    requirement_level: recommended
+  - ref: network.device.vendor.id
+    requirement_level: opt_in
+  # Hardware identity (from upstream hw.*)
+  - ref: hw.model
+    requirement_level: recommended
+    brief: >
+      The platform/chassis model identifier as reported by the vendor.
+  - ref: hw.serial_number
+    requirement_level: opt_in
+    note: |
+      serial_number is identifying for sealed units (ONT,
+      transceiver) and descriptive for field-swappable modular units.
+      On network.device it is descriptive.
+  # OS (from upstream os.*)
+  - ref: os.name
+    requirement_level: recommended
+    brief: >
+      The network operating system name (e.g. "IOS-XR", "Junos", "EOS").
+  - ref: os.version
+    requirement_level: recommended
+    brief: >
+      The network operating system version string.
+  # Operator metadata
+  - ref: network.device.label
+    requirement_level: opt_in
+
+- type: network.chassis
+  stability: development
+  brief: >
+    A physical enclosure (chassis) within a network device.
+  note: |
+    Optional. Only model when the device is modular and
+    the chassis is independently identifiable (has its own serial,
+    position, or is a member of a virtual-chassis/stack).
+
+    On a fixed-form device, do NOT emit this entity — the
+    `network.device` is the inventory unit.
+
+    Mirrors the OpenConfig `openconfig-platform` component of type
+    `CHASSIS` and ENTITY-MIB `entPhysicalClass` chassis(3).
+  identity:
+  - ref: network.chassis.id
+  description:
+  - ref: network.chassis.slot
+    requirement_level: opt_in
+  - ref: hw.serial_number
+    requirement_level: recommended
+    note: >
+      The chassis serial number. Identifying for sealed/fixed chassis; descriptive for virtual-chassis members. #magic___^_^___line
+- type: network.module
+  stability: development
+  brief: >
+    A field-replaceable module (FRU) within a network device: line card, route processor, fabric card, supervisor, or sub-module.
+  note: |
+    Optional. Only model when the module is independently
+    replaceable or independently instrumented (has its own state,
+    serial, lifecycle events like insert/remove).
+
+    Supports recursive containment via `network.module.parent.id` for
+    sub-modules (e.g. a MIC/PIC inside a line card on Juniper, or a
+    MPA inside a line card on Nokia).
+
+    Mirrors OpenConfig platform components of type `LINECARD`,
+    `CONTROLLER_CARD`, `FABRIC`, and ENTITY-MIB module(9).
+  identity:
+  - ref: network.module.id
+  description:
+  - ref: network.module.type
+    requirement_level: recommended
+  - ref: network.module.parent.id
+    requirement_level: opt_in
+  - ref: network.redundancy.role
+    requirement_level: opt_in
+    note: >
+      For a redundant control-card pair (two `type=route_processor` modules in one chassis), the module's `active` / `standby` role within its `network.redundancy.group.type=route_processor` group. See docs/conventions.md (state modelling) — this is an elected role, not a health state.
+  - ref: hw.serial_number
+    requirement_level: opt_in
+
+- type: network.component
+  stability: development
+  brief: >
+    A forwarding component (ASIC, NPU, TCAM) within a network device, modelled only when forwarding-capacity telemetry attaches to it.
+  note: |
+    `network.component` exists ONLY for forwarding-specific
+    telemetry that `hw.*` cannot express — primarily data-plane table
+    utilization. Physical health telemetry (temperature,
+    voltage, errors) stays on the `hw.*` component.
+    See docs/architecture.md (namespace layering).
+
+    Related to its `hw.*` counterpart by id: `hw.id` ↔
+    `network.component.id`. A component that has only physical/health
+    telemetry needs NO `network.component`.
+
+    On a fixed-form device with a single forwarding engine, this MAY
+    still be modelled if table-fill telemetry is reported — the
+    "don't emit empty shells" rule applies to chassis/module
+    (inventory containers), not to components with actual telemetry.
+  identity:
+  - ref: network.component.id
+  description:
+  - ref: network.component.type
+    requirement_level: recommended

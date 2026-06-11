@@ -1,0 +1,49 @@
+---
+file_format: definition/2
+
+# cisco — vendor-specific (non-portable) Cisco network attributes.
+#
+# OTel "system-specific naming" (Stable): a vendor's attributes take a
+# TOP-LEVEL namespace equal to the discriminator value, NOT a `network.vendor.*`
+# infix. The discriminator is `network.device.vendor.name` (= `cisco`), so the
+# root namespace is `cisco.*` — exactly as `db.system.name=cassandra` pairs with
+# `cassandra.*`, and `aws.s3.*` / `azure.cosmosdb.*` pair with their providers.
+# Multi-domain breadth is handled by a product-qualified second token
+# (`cisco.cdp.*`, `cisco.iosxr.*`, …), the way `aws.s3` / `aws.lambda` work — the
+# *area* ("is this network telemetry?") comes from the entity/signal the
+# attribute rides on and the discriminator, not from a `network.` prefix.
+#
+# This package is ILLUSTRATIVE / non-normative in-repo (the GenAI `model/openai`
+# analogue). In a federated deployment a vendor publishes a separate registry
+# (e.g. `semantic-conventions-network-cisco`) that depends on this core by
+# `schema_url` and re-opens the core entity to attach these refs.
+#
+# CONTRACT — standard first. Map to core before minting a vendor attribute.
+# CDP is the worked example: it is a proprietary discovery protocol (a sibling
+# of LLDP, value `cdp` on `network.link.discovery.protocol` and
+# `network.neighbor.protocol`), but a proprietary *protocol* does not make its
+# neighbour data proprietary — almost every CDP TLV carries the same identity
+# LLDP does and maps to the vendor-neutral core:
+#
+#   CDP field (CISCO-CDP-MIB)      -> core home
+#   Device-ID                      -> network.neighbor.id
+#   Port-ID                        -> network.link remote port-id
+#   Capabilities                   -> core neighbour capability
+#   Software version / Platform    -> device sys-description / model
+#   Management address             -> network.neighbor.address
+#   Native VLAN                    -> core interface native-VLAN
+#   Power draw                     -> network.interface.poe.*
+#   VTP management domain          -> (no neutral equivalent) cisco.cdp.vtp_domain
+#
+# Only the VTP management domain is genuinely proprietary (VTP is a Cisco
+# protocol with no standard counterpart), so it is the lone vendor attribute.
+
+attributes:
+- key: cisco.cdp.vtp_domain
+  type: string
+  stability: development
+  brief: >
+    The VTP (VLAN Trunking Protocol) management domain advertised by a CDP neighbour. Proprietary to Cisco; no vendor-neutral equivalent.
+  note: >
+    `cdpCacheVTPMgmtDomain` of the CISCO-CDP-MIB. Expected only on a `network.neighbor` with `protocol=cdp` reported by a device whose `network.device.vendor.name=cisco`. VTP is a Cisco-proprietary VLAN distribution protocol, so the management-domain string has no neutral home — unlike the rest of the CDP payload, which maps to the core `network.neighbor.*` / `network.link.*` attributes LLDP also fills.
+  examples: ["eng-campus", "DC1"]

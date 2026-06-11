@@ -1,0 +1,49 @@
+---
+file_format: definition/2
+metrics:
+- name: network.stp.port.state
+  stability: development
+  brief: >
+    The current spanning-tree state of a port within an instance (enum-as-attribute status metric — UpDownCounter, per the OTel status-metrics guide).
+  note: |
+    The K8s `status.phase` pattern: one series per possible
+    `network.stp.port.state` value, with value 1 for the port's current
+    state and 0 otherwise. The active series also carries
+    `network.stp.port.role` and the verbatim `network.stp.port.native_state`.
+
+    Resolves the per-port-per-instance scoping: the
+    data point associates with BOTH the `network.interface` (which port)
+    and the `network.stp.instance` (which tree) — so MSTP/PVST, where a
+    port is forwarding in one instance and blocking in another, is
+    expressible. Single-instance RSTP simply always reports
+    `network.stp.instance.id = cist`.
+
+    Cardinality note: under PVST/Rapid-PVST this is ports × VLANs ×
+    states; emit judiciously. MSTP (≤64 instances) is the bounded common
+    case.
+  instrument: updowncounter
+  unit: "1"
+  attributes:
+  - ref: network.stp.port.state
+    requirement_level: required
+  - ref: network.stp.port.role
+    requirement_level: recommended
+  - ref: network.stp.port.native_state
+    requirement_level: opt_in
+  entity_associations:
+  - network.interface
+  - network.stp.instance
+
+- name: network.stp.topology_changes
+  stability: development
+  brief: >
+    Number of topology changes (TCs) recorded for the spanning-tree instance.
+  note: |
+    A rising rate is the primary spanning-tree instability signal (TCN
+    storms, a flapping link forcing re-convergence, or an unstable root).
+    The post-restart-reconstructable counterpart to the
+    (events-package) topology-change event.
+  instrument: counter
+  unit: "{change}"
+  entity_associations:
+  - network.stp.instance

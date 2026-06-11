@@ -1,0 +1,66 @@
+---
+file_format: definition/2
+
+# network-stp events (events-envelope design).
+# The two STP events, now authored as refinements of the shared
+# `network.state.changed` envelope:
+#
+#   - network.stp.topology.changed   — the instance-level TCN / root-change.
+#     The single most operationally important switch event: a TCN storm or a
+#     root flap is a network-wide incident. The reconstructable COUNT is the
+#     authored `network.stp.topology_changes` counter.
+#   - network.stp.port.state.changed — a port's per-instance forwarding↔blocking
+#     transition. Complements the `network.stp.port.state` current-state gauge.
+#
+# Both associate `network.stp.instance` (which tree); the port event also
+# associates `network.interface`. The port state is the dedicated
+# STP enum, never normalized to up/down (a blocking port is healthy by design).
+# See docs/conventions.md (state modelling).
+event_refinements:
+- id: network.stp.topology.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    A spanning-tree instance signalled a topology change (TCN) or re-elected its root bridge. The point-in-time event behind the `network.stp.topology_changes` counter — the trap an operator chases when a TCN storm or root flap destabilises the L2 domain.
+  note: |
+    `network.event.state.dimension=operational`. The envelope's verbatim
+    endpoints carry the ROOT BRIDGE identity: `network.event.state.current` is
+    the current `network.stp.root.id`, `network.event.state.previous` the
+    prior one — so a ROOT CHANGE is detectable as previous≠current, while a
+    plain TCN (a port moved, same root) reports current=previous. The local
+    port that triggered the change MAY be carried via the `network.interface`
+    association. Per-VLAN/MSTI scope is the associated `network.stp.instance`.
+  entity_associations:
+  - network.stp.instance
+  - network.interface
+  attributes:
+  - ref: network.event.state.current
+    requirement_level: required
+    note: The current root bridge id (`network.stp.root.id`).
+  - ref: network.event.state.previous
+    requirement_level: recommended
+    note: The prior root bridge id; equals current for a non-root-change TCN.
+
+- id: network.stp.port.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    A port changed its spanning-tree forwarding state within an instance (e.g. forwarding↔blocking/discarding). The transition the `network.stp.port.state` gauge shows the current value of but cannot reconstruct after a restart.
+  note: |
+    `network.event.state.dimension=operational`. Native endpoints in
+    `network.event.state.previous`/`current` carry the verbatim STP port-state
+    term — "forwarding"→"blocking", "FWD"→"BLK" — NOT a normalized
+    up/down, because a blocking/discarding alternate port is healthy by
+    design. Associates both the `network.interface` (which port) and the
+    `network.stp.instance` (which tree), so an MSTP port forwarding in one
+    instance and blocking in another is expressible.
+  entity_associations:
+  - network.interface
+  - network.stp.instance
+  attributes:
+  - ref: network.event.state.current
+    requirement_level: required
+    note: The verbatim new STP port state (e.g. "blocking").
+  - ref: network.event.state.previous
+    requirement_level: recommended
+    note: The verbatim prior STP port state (e.g. "forwarding").

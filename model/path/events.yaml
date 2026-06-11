@@ -1,0 +1,66 @@
+---
+file_format: definition/2
+
+# network-path events (events-envelope design). The path/LSP-layer half of the
+# deferred event backlog named on the entity (model/path/entities.yaml
+# "Events — LSP up/down, label-exhaustion, protection-switch"). Two
+# refinements, one of each shape:
+#
+#   - network.path.state.changed     — the LSP / SR-policy / lightpath up↔down
+#     (or up↔degraded) transition; refines `network.state.changed`. Pairs with
+#     the `network.path.state` current-state gauge + `network.path.native_state`.
+#   - network.path.protection.switched — a protection / FRR / TI-LFA switch to a
+#     backup path; refines `network.alarm` (cause=`redundancy_lost`). The
+#     point-in-time event behind the `network.path.protection.switches` counter
+#     (the reconstructable stand-in).
+#
+# Both associate `network.path` (cross-device identity, not device-scoped); each
+# device on the path emits its own segment's transition carrying the shared
+# `network.path.id`.
+event_refinements:
+- id: network.path.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    A forwarding path changed operational state — an MPLS LSP / SR(v6) policy / TE tunnel / optical lightpath went up, down, or degraded (running on an FRR/backup path). The transition the `network.path.state` gauge shows the current value of but cannot reconstruct after a restart.
+  note: |
+    `network.event.state.dimension=operational`. Native endpoints in
+    `network.event.state.previous`/`current` carry the verbatim vendor path
+    state (`network.path.native_state` — e.g. "Up/Active"→"FRR-active",
+    "Oper-Down"); the coarse normalized value (`up`/`down`/`degraded`) stays on
+    the `network.path.state` gauge. See docs/conventions.md (state modelling).
+
+    On the down edge of an LSP/path loss, carry
+    `network.alarm.cause=connectivity_lost` (opt-in) when the drop is to be
+    treated as a fault. A move to `degraded` because FRR/TI-LFA cut over to a
+    backup is better reported as `network.path.protection.switched`.
+  entity_associations:
+  - network.path
+  attributes:
+  - ref: network.event.state.current
+    requirement_level: required
+    note: The verbatim new path state (e.g. "down", "FRR-active").
+  - ref: network.event.state.previous
+    requirement_level: recommended
+    note: The verbatim prior path state (e.g. "up").
+
+- id: network.path.protection.switched
+  ref: network.alarm
+  stability: development
+  brief: >
+    A path's traffic was switched onto its protecting/backup path — an FRR / TI-LFA / 1:1 or 1+1 protection switch. The raised/cleared alarm complementing the `network.path.protection.switches` counter and the `network.path.protection.active`/`.role` attributes.
+  note: |
+    `network.alarm.cause=redundancy_lost` — the working path failed and the
+    protect path took over (the protected service is now running without its
+    backup). `network.alarm.specific_problem` carries the verbatim trigger
+    ("BFD down on primary", "TI-LFA activated"). `severity=cleared` is the
+    revert/normalisation back onto the working path. Associates `network.path`;
+    the local termination that switched is `network.path.local.device.id`.
+  entity_associations:
+  - network.path
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: Always `redundancy_lost` for this refinement.
+  - ref: network.alarm.specific_problem
+    requirement_level: recommended

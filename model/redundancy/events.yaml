@@ -1,0 +1,55 @@
+---
+file_format: definition/2
+
+# network-redundancy events (events-envelope design). The redundancy/HA event the
+# entity-less package named: peer-link-down / split-brain / DF-change /
+# FHRP-failover EVENTS with the shared event-envelope package; the failover event
+# defers to the event package. ONE alarm refinement covers the family — failover,
+# peer-link down, split-brain, below-min redundancy, RP active/standby switchover
+# — all of which are the same condition: a redundancy/HA guarantee was lost.
+#
+# Redundancy is membership-by-reference (no entity): the alarm associates
+# `network.device` (the member that changed role / lost its peer) and carries the
+# shared `network.redundancy.group.id` so the affected group is queryable.
+event_refinements:
+- id: network.redundancy.switchover
+  ref: network.alarm
+  stability: development
+  brief: >
+    A redundancy / high-availability group lost or changed its protection — an active↔standby failover, a peer-link down, a split-brain (both members active), a route-processor (RP) switchover, or a drop below the group's minimum redundancy. The raised/cleared alarm complementing the `network.redundancy.role` enum-as-attribute gauge.
+  note: |
+    `network.alarm.cause=redundancy_lost` for every member of the family. The
+    specific condition is the verbatim `network.alarm.specific_problem`
+    ("peer-link down", "split-brain detected", "RP switchover to standby",
+    "VRRP master→backup"); `network.alarm.category=processing_error` (a
+    control-plane HA fault) or `equipment` (RP hardware). `severity=cleared`
+    is the resync/normalisation (peer-link restored, redundancy re-established).
+
+    Associates `network.device` (the member emitting the event); carry
+    `network.redundancy.group.id` so consumers can correlate both peers of one
+    group, and `network.redundancy.role` for the role transitioned INTO
+    (e.g. a former `standby` now `active`). FHRP protocol detail
+    (priority/preempt/track) remains deferred to a future FHRP package;
+    this is the failover NOTIFICATION only.
+  entity_associations:
+  - network.device
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: Always `redundancy_lost` for this refinement.
+  - ref: network.redundancy.group.id
+    requirement_level: recommended
+    note: The group whose redundancy changed, for cross-peer correlation.
+  - ref: network.redundancy.role
+    requirement_level: recommended
+    note: The role this member transitioned into (e.g. `active` after a failover).
+  - ref: network.redundancy.group.type
+    requirement_level: opt_in
+  - ref: network.module.id
+    requirement_level: opt_in
+    note: >
+      For a `route_processor` switchover, the supervisor module that became active (the intra-device case where the failing-over members are modules, not separate devices).
+  - ref: network.alarm.specific_problem
+    requirement_level: recommended
+  - ref: network.alarm.category
+    requirement_level: opt_in

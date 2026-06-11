@@ -1,0 +1,148 @@
+---
+file_format: definition/2
+
+# network-qos — the per-class queue counter plane + the shared QoS class/marking
+# vocabulary.
+#
+# Scope: QoS is THREE planes at three cardinalities, and only the
+# bounded one is authored here:
+#   - Plane A — per-CLASS queue counters (≤8 forwarding classes per port): the
+#     80% operators alert on ("which class is dropping, tail or WRED?"). Authored
+#     as metrics on `network.interface` (metrics.yaml), dimensioned by the bounded
+#     `network.qos.class` below. NO queue entity: a queue
+#     is not durably identifiable and per-subscriber queues are unbounded; the
+#     forwarding CLASS is the bounded discriminator dimension (the
+#     one-counter-plus-discriminator idiom).
+#   - Plane B — per-SUBSCRIBER HQoS shaping (10^5–10^6 subjects × classes): the
+#     cardinality firewall's villain. "Is THIS subscriber throttled?" is a RECORD
+#     in the usage/accounting family, produced by the
+#     mediation discipline — NEVER a per-subscriber metric series. Not
+#     authored here.
+#   - Plane C — classifier / marker / scheduler-map CONFIG (match/set rules,
+#     WRR/WFQ weights, CIR/PIR, buffer profiles): config-plane, the firewall-
+#     rulebase twin. Deferred; align to `openconfig-qos` when built.
+#
+# Convergence: a PON T-CONT is a scheduler and a GEM port is a service
+# queue, so the OLT GEM↔VLAN↔T-CONT service-mapping and the BNG HQoS
+# tree both reference `network.qos.class` rather than minting domain-private
+# stats. `network.pon.dba.granted` and a future `network.qos.shaper` rate are the
+# same "granted/shaped rate" concept at two layers (documented, not duplicated).
+#
+# Reused (not redefined): `network.io.direction` is an upstream ref (Principle 8);
+# `network.access.subscriber.id` (the per-sub record key) stays in `network-access`.
+#
+# Prior art: IETF DiffServ — RFC 2474 (DSCP) / 2475 (arch) / 3246 (EF) /
+# 2597 (AF) / 2697 / 2698 (srTCM/trTCM color); IEEE 802.1Q PCP (802.1p);
+# OpenConfig `openconfig-qos` (forwarding-groups/queues/scheduler-policies/
+# classifiers — the deferred config-plane alignment target); BBF TR-178 / TR-101
+# / TR-059 (broadband HQoS); ITU-T G.984.3 / G.9807.1 (T-CONT + DBA);
+# DIFFSERV-MIB (RFC 3289), QOS-MIB (the per-class counter precedent).
+
+attributes:
+# --- The keystone: the bounded forwarding-class discriminator ----------
+- key: network.qos.class
+  type: string
+  stability: development
+  brief: >
+    The forwarding/traffic class (DiffServ behaviour aggregate) — the scheduling bucket a packet is queued into.
+  note: |
+    The bounded discriminator that makes the queue plane safe: hardware
+    offers ~8 of these (802.1p has 8 priorities; DiffServ collapses 64 DSCPs
+    into a handful of PHBs; ASICs ship 8 egress queues), so it is a low,
+    stable-cardinality dimension — never an entity, never the
+    per-subscriber axis (that is the Plane-B record).
+    See docs/conventions.md (cardinality firewall).
+
+    Open enum, lowercase (the tagging ladder). Well-known values — the
+    8-class DiffServ ladder:
+    `network_control`, `voice`, `video`, `critical`, `business`,
+    `best_effort`, `scavenger`. Operators MAY instead use the raw hardware
+    queue/priority as a string (`0`–`7`), or a vendor class-map name.
+
+    This is the single noun the PON GEM/T-CONT service-mapping and
+    the BNG HQoS tree both bind to — author once, reference
+    everywhere.
+  examples: ["voice", "best_effort", "scavenger", "network_control", "3"]
+
+# --- Why a packet left a queue un-serviced -----------------------------
+- key: network.qos.drop.reason
+  type:
+    members:
+    - id: tail
+      value: "tail"
+      brief: Tail-drop — the queue was full when the packet arrived.
+      stability: development
+    - id: wred
+      value: "wred"
+      brief: >
+        Active queue management (WRED/RED/CoDel) dropped the packet probabilistically before the queue filled.
+      stability: development
+    - id: buffer
+      value: "buffer"
+      brief: >
+        No shared buffer / packet-memory available (global or pool exhaustion), distinct from this queue being full.
+      stability: development
+    - id: policer
+      value: "policer"
+      brief: An ingress/egress policer (rate limiter) dropped the packet.
+      stability: development
+    - id: shaper
+      value: "shaper"
+      brief: >
+        The shaper dropped (rather than buffered) the packet — the buffer-bounded congestion case.
+      stability: development
+  stability: development
+  brief: >
+    The mechanism by which a packet was dropped from a class queue — the WRED-vs-tail-vs-policy distinction `network.interface.discards` cannot express.
+  note: >
+    Distinguishes "the class is oversubscribed" (`tail`/`wred`/`buffer`) from "policy is dropping it" (`policer`/`shaper`). Closed enum.
+
+# --- Metering color (RFC 2697/2698) ------------------------------------
+- key: network.qos.color
+  type:
+    members:
+    - id: green
+      value: "green"
+      brief: Conforming — within the committed rate (CIR).
+      stability: development
+    - id: yellow
+      value: "yellow"
+      brief: Exceeding — between committed and peak (CIR < rate ≤ PIR).
+      stability: development
+    - id: red
+      value: "red"
+      brief: Violating — above the peak rate (PIR); the drop-eligible color.
+      stability: development
+  stability: development
+  brief: >
+    The RFC 2697/2698 (srTCM/trTCM) metering color assigned by a policer.
+  note: >
+    Closed enum. The drop-precedence marking that drives WRED and downstream re-marking; `red` traffic is dropped first under congestion.
+
+# --- Marking facets (opt-in dimensions) --------------------------------
+- key: network.qos.dscp
+  type: int
+  stability: development
+  brief: >
+    The DiffServ Code Point (RFC 2474) marked on the packet (0–63).
+  note: >
+    A marking facet, distinct from `network.qos.class` (the scheduling bucket the DSCP is classified into). Bounded at 64; opt-in as a dimension — do NOT cross it with `class` on a high-rate counter without considering cardinality.
+  examples: [0, 46, 34, 10]
+
+- key: network.qos.cos
+  type: int
+  stability: development
+  brief: >
+    The Layer-2 Class of Service — IEEE 802.1p PCP (Priority Code Point), 0–7 — marked in the VLAN tag.
+  note: >
+    A marking facet (the L2 twin of `network.qos.dscp`). Bounded at 8.
+  examples: [0, 5, 7]
+
+- key: network.qos.exp
+  type: int
+  stability: development
+  brief: >
+    The MPLS Traffic-Class / EXP bits (0–7) marked in the label stack.
+  note: >
+    A marking facet for MPLS-switched traffic (the tie to `network.path` / `network.sr.*`). Bounded at 8.
+  examples: [0, 5, 6]

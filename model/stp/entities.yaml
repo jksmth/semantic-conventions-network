@@ -1,0 +1,55 @@
+---
+file_format: definition/2
+entities:
+- type: network.stp.instance
+  stability: development
+  brief: >
+    A spanning-tree instance on a device: the CIST, an MST instance, or a per-VLAN (PVST) spanning tree — the unit that elects a root and computes per-port roles/states.
+  note: |
+    The L2 control-plane topology object. STP runs one or more independent
+    instances per device; each elects a root bridge and assigns every port
+    a role + forwarding state. This entity carries the bridge-/instance-
+    level election state; the per-port role/state is the
+    `network.stp.port.state` metric, associated with both this entity and
+    the relevant `network.interface`.
+
+    Why a dedicated entity:
+    - It is NOT a `network.instance` (a forwarding/routing context) — an
+      STP instance is a control-plane computation; the two are unrelated
+      and must not be conflated.
+    - The shape (multi-instance + per-port role/state + VLAN scope + root
+      election) is, in practice, specific to STP and its variants. The
+      only superficial cousins (TRILL/SPB) are all-active IS-IS multipath
+      with no blocking or root election and do not share it, so no generic
+      "topology instance" entity is defined. The reusable element is the
+      normalized+native role/state pattern (shared with `network.neighbor`),
+      not this entity.
+
+    Instance count by mode:
+    - RSTP / classic STP: exactly one instance (`cist`).
+    - MSTP: the CIST plus one per MST instance.
+    - PVST / Rapid-PVST: one per VLAN (bounded by the device's VLAN count).
+
+    Identity is scoped by device: the full identity is
+    (`network.device.id`, `network.stp.instance.id`); the owning
+    `network.device` is expected in the same Resource. See
+    docs/entity-model.md (sub-entity identity).
+  identity:
+  - ref: network.stp.instance.id
+  description:
+  - ref: network.stp.mode
+    requirement_level: recommended
+  - ref: network.stp.bridge.id
+    requirement_level: recommended
+  - ref: network.stp.root.id
+    requirement_level: recommended
+  - ref: network.stp.root.path_cost
+    requirement_level: recommended
+  - ref: network.stp.is_root
+    requirement_level: recommended
+  - ref: network.stp.root.port
+    requirement_level: opt_in
+  - ref: network.stp.instance.priority
+    requirement_level: opt_in
+  - ref: network.stp.instance.vlans
+    requirement_level: opt_in

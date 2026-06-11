@@ -1,0 +1,54 @@
+---
+file_format: definition/2
+
+# network-pon events (events-envelope design). Authors the PON-event
+# refinements. Two refinements:
+#
+#   - network.pon.onu.state.changed — the ONU online/offline (ranging/activation)
+#     transition; refines `network.state.changed`.
+#   - network.pon.onu.dying_gasp    — the last-gasp power-loss / LOSi alarm an
+#     ONU emits as it loses power; refines `network.alarm` (cause=power_failure,
+#     the canonical "the light went out because the customer's power did").
+#
+# Both are measured by the OLT and relayed over OMCI (producer≠subject):
+# the ONU is the subject (`network.device`, role=onu); the OLT is
+# the `network.observer` (`collection.method=omci`). The events therefore
+# associate with the ONU's `network.device`.
+# See docs/conventions.md (events).
+event_refinements:
+- id: network.pon.onu.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    An ONU/ONT changed registration state — online/offline, or a ranging/activation phase transition. The online↔offline transition the `network.pon.onu.state` gauge cannot reconstruct after a restart.
+  note: |
+    `network.event.state.dimension=operational`. Native endpoints in
+    `network.event.state.previous`/`current` carry the verbatim G.984/G.988
+    ONU state term (e.g. "operational"→"emergency_stop", or the ranging
+    phases). The coarse normalized value stays on `network.pon.onu.state`.
+
+    An ONU dropping offline due to its own power loss SHOULD instead (or also)
+    be reported as `network.pon.onu.dying_gasp` — the down-edge carries a
+    cause the bare state transition does not.
+  entity_associations:
+  - network.device
+
+- id: network.pon.onu.dying_gasp
+  ref: network.alarm
+  stability: development
+  brief: >
+    An ONU signalled dying-gasp / loss-of-signal on power loss — the last-message-before-dark that distinguishes "the customer lost power" from "the fibre/ONU failed." The single most useful PON access alarm.
+  note: |
+    `network.alarm.cause=power_failure` for a dying-gasp (the ONU reported its
+    own power loss) and `signal_loss` (LOSi) when the head-end simply stops
+    seeing the ONU's burst. `category=environmental` (power) /
+    `communications` (LOS). Associates with the ONU's `network.device`;
+    measured at the OLT over OMCI.
+  entity_associations:
+  - network.device
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: "`power_failure` (dying-gasp) or `signal_loss` (LOSi)."
+  - ref: network.alarm.category
+    requirement_level: opt_in

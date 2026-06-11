@@ -1,0 +1,35 @@
+---
+file_format: definition/2
+entities:
+- type: network.nat.pool
+  stability: development
+  brief: >
+    A NAT pool — the finite, NF-owned set of public (outside) addresses, and their L4 ports, that a NAT/PAT device translates into.
+  note: |
+    The second member of the address-resource-pool family (the sibling of
+    `network.access.pool`): a bounded, durable resource with telemetry over
+    time, so an entity. The crucial difference from a DHCP pool is the
+    consumption unit — a NAT/PAT pool is consumed one PORT per concurrent flow,
+    not one lease per subscriber, so its scarce resource is ports and its
+    primary alert is `network.nat.port.utilization`, not address utilisation.
+
+    Identity is scoped by device: the full identity is
+    (`network.device.id`, `network.nat.pool.id`); the owning `network.device`
+    is expected in the same Resource. See docs/entity-model.md (sub-entity
+    identity).
+
+    A home CPE doing NAT44 has NO pool entity — its single WAN address is not a
+    pool; it reports only the box-wide `network.nat.translations` occupancy. The
+    pool entity appears on carrier CG-NAT (the public pool subscribers share)
+    and on enterprise firewalls (source-NAT and DMZ/VIP pools).
+
+    Pool/port EXHAUSTION is a silent onboarding outage; the utilisation metrics
+    are the signal to alert on, and `network.nat.pool_exhausted` /
+    `network.nat.port_block_exhausted` are the raised/cleared alarms.
+  identity:
+  - ref: network.nat.pool.id
+  description:
+  - ref: network.nat.pool.type
+    requirement_level: recommended
+  - ref: network.nat.pool.address_family
+    requirement_level: recommended

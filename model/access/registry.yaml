@@ -1,0 +1,412 @@
+---
+file_format: definition/2
+
+# network-access — the technology-NEUTRAL access-network layer.
+#
+# Concepts shared across access technologies (PON / DOCSIS / DSL /
+# fixed-wireless): the access-technology class, the subscriber / service /
+# circuit identity, and the BNG-as-network-function operational telemetry.
+# Technology-SPECIFIC physical/forwarding telemetry lives in the per-technology
+# packages (`network.pon.*`, and future `network.docsis.*` / `network.dsl.*`).
+#
+# Scope: only what the BNG/BRAS/LNS network function ITSELF sees
+# and owns —
+#   - the identity layer (subscriber / service / circuit);
+#   - aggregate SESSION-TABLE load (count by state/type + setup/teardown rate)
+#     — NF resource / control-plane load, NOT a per-subscriber inventory. The
+#     subscriber session is count + record, NEVER an entity.
+#   - NF-LOCAL address-POOL utilisation (pools the BNG allocates from);
+#   - AAA CLIENT-side dependency (the servers this NAS uses + client-observed
+#     auth/accounting/CoA), reusing the cardinality firewall (low-card dims).
+#
+# The SUBSCRIBER-ENDPOINT single session (the CE/CPE side): the
+# *symmetric opposite* of the aggregate above. A home/branch CPE terminates
+# exactly ONE (or a handful of) subscriber session(s) — a PPPoE dialer, an IPoE
+# WAN. That is bounded by config, so the cardinality firewall PERMITS
+# per-session DETAIL here (session-id, AC-name, MRU) — it needs the *opposite*
+# of the aggregate machinery. These attributes describe the single session and
+# hang off the terminating `network.interface` (the dialer/WAN), distinct from
+# the BNG's count-by-state aggregate and from `network.neighbor`. They are the
+# subscriber-edge profile of the same vocabulary
+# (`network.access.session.type`/`state` are reused on the endpoint).
+#
+# OUT of scope (separate producer — the AAA/mediation system's database):
+# the per-subscriber active-session inventory and per-subscriber
+# accounting/usage/billing records (the BNG emits RADIUS Accounting TO that
+# system; it is not the system of record). Also out of this package:
+# HQoS scheduler/queue telemetry → `network-qos`; the subscriber
+# session lifecycle EVENT, pool-exhausted and AAA-unreachable EVENTS → events
+# package; disaggregated BNG CP/UP → deferred.
+#
+# `bng`/`bras` are open `network.device.role` values; LAC/LNS are
+# L2TP functions carried by `network.access.session.type=l2tp`, not roles.
+#
+# Prior art: BBF TR-178 / TR-101 / TR-146 / TR-459, RFC 2516 (PPPoE),
+# RFC 2865/2866 (RADIUS auth/accounting), RFC 5176 (CoA), RFC 8415 (DHCPv6/PD).
+
+attributes:
+- key: network.access.technology
+  type:
+    members:
+    - id: pon
+      value: "pon"
+      brief: >
+        Passive optical network (GPON/XGS-PON/…); the PON standard is `network.pon.type`.
+      stability: development
+    - id: docsis
+      value: "docsis"
+      brief: DOCSIS cable access.
+      stability: development
+    - id: dsl
+      value: "dsl"
+      brief: DSL (xDSL) access.
+      stability: development
+    - id: fixed_wireless
+      value: "fixed_wireless"
+      brief: Fixed-wireless access.
+      stability: development
+    - id: cellular
+      value: "cellular"
+      brief: Cellular / mobile access.
+      stability: development
+    - id: ethernet
+      value: "ethernet"
+      brief: Active Ethernet / fibre-to-the-X point-to-point.
+      stability: development
+  stability: development
+  brief: >
+    The access-network medium class of a subscriber attachment.
+  note: >
+    The technology *class* (open enum, lowercase), distinct from the technology-specific standard (e.g. `network.access.technology = pon` with `network.pon.type = xgspon`). Used for technology-neutral grouping of subscriber/service telemetry across PON/DOCSIS/DSL.
+
+- key: network.access.subscriber.id
+  type: string
+  stability: development
+  brief: >
+    A stable identifier for the subscriber/account associated with an access attachment.
+  note: |
+    PII-sensitive and high-cardinality. MUST be opt-in, and is
+    resource/record-level metadata ONLY — it MUST NOT be attached to
+    high-cardinality metric data points (the cardinality firewall records
+    the per-subscriber view as a record, not an entity or a metric
+    dimension). Prefer an opaque, operator-internal id over names or
+    contact details. See docs/conventions.md (cardinality firewall).
+  examples: ["sub-8841201", "acct:az99e1"]
+
+- key: network.access.service.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of the service instance delivered over the access attachment (e.g. an internet/voice/IPTV service).
+  note: >
+    Operator-assigned. A subscriber may have multiple services. Opt-in; treat as resource/record-level metadata (same cardinality discipline as `network.access.subscriber.id`).
+  examples: ["svc-internet-1g", "svc-voice-01"]
+
+- key: network.access.circuit.id
+  type: string
+  stability: development
+  brief: >
+    The access circuit identifier (e.g. DSL/Ethernet circuit-id, the Agent-Circuit-Id inserted toward the BNG).
+  note: >
+    The physical/logical access circuit the attachment rides — the operator's wiring/provisioning handle, distinct from the subscriber (`network.access.subscriber.id`) and the on-medium address (`network.pon.id`/`onu.id`).
+  examples: ["OLT03/gpon-4/0/14", "circuit-90a1"]
+
+# === Subscriber session (aggregate NF view) ============================
+# The session is count + record, NEVER an entity. These attributes are
+# low-cardinality DIMENSIONS on the aggregate session-table metrics; they
+# do NOT carry per-subscriber identity (that is a record / the AAA system's).
+
+- key: network.access.session.type
+  type:
+    members:
+    - id: pppoe
+      value: "pppoe"
+      brief: PPP-over-Ethernet session (RFC 2516).
+      stability: development
+    - id: ipoe
+      value: "ipoe"
+      brief: IP-over-Ethernet (DHCP/DHCPv6) session.
+      stability: development
+    - id: l2tp
+      value: "l2tp"
+      brief: >
+        Session carried over an L2TP tunnel — the wholesale LAC/LNS case. The LAC/LNS function is expressed here, not as a separate `network.device.role`.
+      stability: development
+  stability: development
+  brief: >
+    The subscriber session encapsulation/type.
+  note: >
+    Open enum, lowercase. A low-cardinality dimension on the aggregate session metrics. `l2tp` marks the wholesale tunnel case (a BNG acting as LAC/LNS); it does not change the device role.
+
+- key: network.access.session.state
+  type:
+    members:
+    - id: up
+      value: "up"
+      brief: Session established and forwarding (PPP up / DHCP bound).
+      stability: development
+    - id: connecting
+      value: "connecting"
+      brief: >
+        Mid-establishment (PPPoE discovery/LCP/auth/IPCP, or DHCP discover/request).
+      stability: development
+    - id: terminating
+      value: "terminating"
+      brief: Tearing down (LCP terminate / lease release).
+      stability: development
+    - id: down
+      value: "down"
+      brief: Failed / disconnected.
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: State cannot be determined.
+      stability: development
+  stability: development
+  brief: >
+    The coarse lifecycle state of a subscriber session, used to bucket the aggregate session count.
+  note: >
+    A low-cardinality dimension on `network.access.sessions` (how many sessions are in each state). The same coarse vocabulary family as `network.neighbor.state`, adapted to the session lifecycle. The verbatim per-session native state and the session lifecycle *event* are record/event-shaped and are NOT carried here (deferred).
+
+# === AAA client-side (NAS view) =======================================
+# The BNG/WLC is a RADIUS/AAA CLIENT. These describe the servers it uses and
+# the exchanges it observes. The AAA platform's own internals are a separate
+# producer (out of scope).
+
+- key: network.access.aaa.protocol
+  type:
+    members:
+    - id: radius
+      value: "radius"
+      brief: RADIUS (RFC 2865/2866).
+      stability: development
+    - id: diameter
+      value: "diameter"
+      brief: Diameter (RFC 6733).
+      stability: development
+    - id: tacacs_plus
+      value: "tacacs_plus"
+      brief: TACACS+.
+      stability: development
+  stability: development
+  brief: The AAA protocol used toward the server.
+  note: Open enum, lowercase.
+
+- key: network.access.aaa.operation
+  type:
+    members:
+    - id: authenticate
+      value: "authenticate"
+      brief: An authentication exchange (Access-Request/…).
+      stability: development
+    - id: authorize
+      value: "authorize"
+      brief: An authorization exchange.
+      stability: development
+    - id: accounting
+      value: "accounting"
+      brief: >
+        An accounting transmit (Acct-Start/Interim/Stop). This is the client's *transmit health*, NOT the accounting record itself — the record is the AAA/mediation system's.
+      stability: development
+  stability: development
+  brief: The kind of NAS-originated AAA exchange.
+  note: Open enum, lowercase.
+
+- key: network.access.aaa.result
+  type:
+    members:
+    - id: accept
+      value: "accept"
+      brief: Accepted (Access-Accept / Acct-Response).
+      stability: development
+    - id: reject
+      value: "reject"
+      brief: Rejected (Access-Reject).
+      stability: development
+    - id: timeout
+      value: "timeout"
+      brief: No response from the server.
+      stability: development
+    - id: error
+      value: "error"
+      brief: Protocol/transport error.
+      stability: development
+  stability: development
+  brief: >
+    The client-observed result of an AAA exchange.
+  note: >
+    Open enum, lowercase. The cause-of-the-day dimension when subscribers cannot authenticate. Low-cardinality.
+
+- key: network.access.aaa.server.id
+  type: string
+  stability: development
+  brief: >
+    Identifier (or address) of the AAA server the NAS is talking to.
+  note: >
+    A low-cardinality dimension (a BNG points at a handful of servers). Identifies which server an auth/accounting result or latency pertains to, for failover diagnosis.
+  examples: ["10.0.0.10", "radius-primary", "aaa-east-1"]
+
+- key: network.access.aaa.server.role
+  type:
+    members:
+    - id: primary
+      value: "primary"
+      brief: The primary AAA server.
+      stability: development
+    - id: secondary
+      value: "secondary"
+      brief: A secondary/failover AAA server.
+      stability: development
+  stability: development
+  brief: The configured role of the AAA server in the NAS's failover list.
+
+- key: network.access.coa.type
+  type:
+    members:
+    - id: coa
+      value: "coa"
+      brief: Change-of-Authorization (RFC 5176).
+      stability: development
+    - id: disconnect
+      value: "disconnect"
+      brief: Disconnect-Message (RFC 5176).
+      stability: development
+  stability: development
+  brief: >
+    The kind of server-originated dynamic-authorization request received by the NAS.
+  note: Open enum, lowercase.
+
+- key: network.access.coa.result
+  type:
+    members:
+    - id: ack
+      value: "ack"
+      brief: The NAS ACKed the request (CoA-ACK / Disconnect-ACK).
+      stability: development
+    - id: nak
+      value: "nak"
+      brief: The NAS NAKed the request (CoA-NAK / Disconnect-NAK).
+      stability: development
+  stability: development
+  brief: The NAS's response to a received CoA/Disconnect request.
+
+# === Address pool (NF-local) ==========================================
+# A pool the BNG itself allocates subscriber addresses from. Bounded and
+# durable with telemetry over time → an ENTITY. Externally
+# assigned (RADIUS-framed / external DHCP / IPAM) addressing is out of scope.
+
+- key: network.access.pool.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of an NF-local address pool, unique within the device.
+  note: >
+    Full identity is the pair (`network.device.id`, `network.access.pool.id`). The owning `network.device` is expected in the same Resource. See docs/entity-model.md (sub-entity identity).
+  examples: ["POOL1", "ipv4-residential", "pd-pool-east"]
+
+- key: network.access.pool.type
+  type:
+    members:
+    - id: ipv4
+      value: "ipv4"
+      brief: An IPv4 address pool.
+      stability: development
+    - id: ipv6_na
+      value: "ipv6_na"
+      brief: An IPv6 non-temporary address (IA_NA) pool.
+      stability: development
+    - id: ipv6_pd
+      value: "ipv6_pd"
+      brief: An IPv6 prefix-delegation (IA_PD) pool.
+      stability: development
+  stability: development
+  brief: The address family / allocation kind of the pool.
+  note: Open enum, lowercase.
+
+- key: network.access.pool.state
+  type:
+    members:
+    - id: used
+      value: "used"
+      brief: Addresses/prefixes currently allocated.
+      stability: development
+    - id: free
+      value: "free"
+      brief: Addresses/prefixes available for allocation.
+      stability: development
+  stability: development
+  brief: >
+    Allocation state, used to bucket the pool address count (used + free = size).
+
+# === Subscriber-endpoint single session (CE/CPE view) =================
+# The symmetric opposite of the aggregate session view above. These describe
+# the ONE subscriber session a CPE/CE terminates and hang off the terminating
+# `network.interface` (the dialer/WAN), NOT the `network.device`. Bounded by
+# config (a CPE has one dialer, maybe a few), so per-session detail is
+# cardinality-safe here — the exact detail deferred for the
+# subscriber side. Reuse `network.access.session.type` (pppoe/ipoe/l2tp) and
+# `network.access.session.state` on the same interface for the kind/state.
+
+- key: network.access.session.id
+  type: string
+  stability: development
+  brief: >
+    The identifier of the single subscriber session terminated on this endpoint — the PPPoE Session-ID (PADS), or the IPoE binding/lease id.
+  note: >
+    Endpoint-side, hung off the terminating `network.interface` (e.g. a `dialer0`). A bounded, single-session detail, distinct from the BNG's aggregate count (which carries NO per-session id). Pairs with `network.access.session.type`/`state` on the same interface.
+  examples: ["0x0a3f", "sess-44182"]
+
+- key: network.access.session.ac_name
+  type: string
+  stability: development
+  brief: >
+    The PPPoE Access Concentrator name the endpoint connected to (the AC-Name tag from PADO/PADS, RFC 2516) — which BNG/BRAS terminates this session.
+  note: >
+    Endpoint-side detail. The operator-visible "who am I dialled into" string; changing AC-name across reconnects is the signature of a BNG failover. PPPoE-specific (absent for IPoE).
+  examples: ["bng-east-01", "BRAS-LON-3"]
+
+- key: network.access.session.service_name
+  type: string
+  stability: development
+  brief: >
+    The PPPoE Service-Name negotiated for the session (the Service-Name tag, RFC 2516).
+  note: >
+    Endpoint-side detail. Often empty/wildcard on residential links; carries the wholesale/retailer service selector where used. PPPoE-specific.
+  examples: ["internet", "isp-acme"]
+
+- key: network.access.session.mru
+  type: int
+  stability: development
+  brief: >
+    The negotiated PPP MRU (Maximum Receive Unit) for the session, in bytes — the payload MTU the PPPoE/PPP link settled on (commonly 1492 over Ethernet, less with PPPoE-over-VLAN).
+  note: >
+    Endpoint-side detail. The number every "why is my MTU wrong" ticket needs; a non-1492 value flags a tunnelling/overhead mismatch. The interface's own `network.interface.mtu` is the configured L3 MTU; this is the PPP-negotiated payload unit.
+  examples: [1492, 1500, 1454]
+
+# === Address scope (the join to the NAT plane) ========================
+# Which addressing reality the subscriber session lives in. The seam between
+# the BNG subscriber session and `network.nat`: a `cgnat` session's public
+# binding is a NAT port-block record, joined on the subscriber id.
+- key: network.access.session.address_scope
+  type:
+    members:
+    - id: public
+      value: "public"
+      brief: >
+        The subscriber holds a routable public address directly — no carrier translation in path.
+      stability: development
+    - id: cgnat
+      value: "cgnat"
+      brief: >
+        The subscriber sits behind carrier-grade NAT — the assigned address is shared/CGN space (RFC 6598, 100.64.0.0/10) and the public binding is a `network.nat` port-block.
+      stability: development
+    - id: private
+      value: "private"
+      brief: >
+        The subscriber holds a private (RFC 1918) address with no carrier NAT modelled here (e.g. NAT performed on-premise by the CPE).
+      stability: development
+  stability: development
+  brief: >
+    Whether the session's assigned address is public, behind carrier-grade NAT, or private — the addressing reality the subscriber connection lives in.
+  note: >
+    Open enum, lowercase. The join between the BNG subscriber session and the NAT plane: when `cgnat`, the subscriber's public `ip:port` binding is the `network.nat.port_block.allocated`/`.released` record, joined on `network.access.subscriber.id`, and the carrier resource is the `network.nat.pool` the CGN draws from. `public` is the classic one-routable-address-per-subscriber model; `private` covers on-premise CPE NAT where no carrier translation is in path.

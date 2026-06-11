@@ -1,0 +1,286 @@
+---
+file_format: definition/2
+
+# Upstream attributes used by network.device (imported via manifest dependency):
+#   - os.name          (network OS name, e.g. "IOS-XR", "Junos")
+#   - os.version       (network OS version string)
+#   - hw.serial_number (chassis/unit serial number)
+#   - hw.model         (platform model identifier)
+#
+# These are ref'd on the entity, not redefined here.
+
+attributes:
+# --- Identity -----------------------------------------------------------
+- key: network.device.id
+  type: string
+  stability: development
+  brief: >
+    A stable, unique identifier for the network device within its deployment scope.
+  note: |
+    The id is defined by its contract: stable, unique within its scope, and
+    invariant for the life of the entity. How a producer derives it and how
+    independently-collected ids are reconciled are explicitly out of scope
+    (operator/backend concern). The convention requires stability if set
+    correctly; it does not guarantee that SNMP, gNMI, and flow export
+    converge on one id.
+
+    Not to be confused with upstream `device.id` which is scoped to
+    mobile/client device tracking (GDPR-sensitive, app-lifecycle).
+
+    Examples of suitable sources: a UUID persisted on the device, a
+    controller-assigned system-ip, or a deterministic hash of chassis
+    serial + slot for fixed-form units.
+  examples: ["rtr-edge-01", "550e8400-e29b-41d4-a716-446655440000"]
+
+- key: network.device.name
+  type: string
+  stability: development
+  brief: >
+    Human-readable name of the device (e.g. hostname, sysName).
+  note: >
+    Mutable — not used for identity matching. May change on reconfiguration.
+  examples: ["core-rtr-1.dc1.example.com", "edge-sw-42"]
+
+# --- Classification -----------------------------------------------------
+- key: network.device.type
+  type:
+    members:
+    - id: router
+      value: "router"
+      brief: A device primarily performing L3 routing/forwarding.
+      stability: development
+    - id: switch
+      value: "switch"
+      brief: A device primarily performing L2 switching.
+      stability: development
+    - id: firewall
+      value: "firewall"
+      brief: A stateful security / packet-filtering device.
+      stability: development
+    - id: load_balancer
+      value: "load_balancer"
+      brief: An application delivery controller / load balancer.
+      stability: development
+    - id: access_point
+      value: "access_point"
+      brief: A wireless access point.
+      stability: development
+    - id: controller
+      value: "controller"
+      brief: >
+        A management controller (e.g. wireless LAN controller, SD-WAN controller).
+      stability: development
+    - id: olt
+      value: "olt"
+      brief: An optical line terminal (PON head-end).
+      stability: development
+    - id: ont
+      value: "ont"
+      brief: An optical network terminal / unit (subscriber CPE on PON).
+      stability: development
+    - id: optical_transport
+      value: "optical_transport"
+      brief: >
+        An optical transport node (ROADM, amplifier, transponder shelf).
+      stability: development
+  stability: development
+  brief: >
+    The functional type of the network device.
+  note: |
+    `type` is what the device fundamentally **is** — its dominant
+    forwarding/capability class, intrinsic to the hardware/function. The test:
+    the label would still be true if the box were redeployed on a
+    different network (a router is still a router). It is **orthogonal to
+    `network.device.role`**, which is *where it sits / what it serves* in this
+    operator's design (positional, redeployment-dependent).
+    See docs/entity-model.md (type vs role).
+
+    A device performing multiple functions (e.g. a router that also switches)
+    SHOULD use the dominant function. Open enum — custom values MAY be used
+    when no well-known value applies.
+
+    Note the deliberate asymmetry with the subscriber edge: `cpe` is a
+    **`role`, not a `type`** — a CPE *is* a router/switch/ONT that
+    happens to sit at the customer premises. `olt`/`ont` (and `access_point`)
+    ARE types because they name an intrinsic PON/radio device class, not a
+    position. An integrated PON home gateway is therefore `type=ont` (what it
+    is) + `role=cpe` (where it sits); a DSL/fibre home router is `type=router`
+    + `role=cpe`. There is no `type=cpe`.
+
+- key: network.device.role
+  type: string
+  stability: development
+  brief: >
+    The operator-assigned topological or functional role of the device within the network.
+  note: |
+    Unlike `network.device.type` (what the device *is*, intrinsic), `role`
+    describes *where it sits* or *what function it serves* in the operator's
+    design — positional and redeployment-dependent. Values are
+    operator-defined and unbounded. Common examples:
+
+    - Backbone/core: `pe`, `p`, `core`, `route_reflector`, `border`
+    - Data centre: `spine`, `leaf`, `superspine`, `border_leaf`
+    - Access/edge: `cpe`, `edge`, `aggregation`, `distribution`, `access`
+    - Service: `bng`, `bras`, `nat`, `dns`
+
+    `cpe` lives here, NOT in `network.device.type`: a CPE is a
+    router/switch/ONT positioned at the customer premises, so it is
+    `type=<what it is>` + `role=cpe`. Likewise `bng`/`bras` are roles,
+    not types.
+  examples: ["pe", "spine", "leaf", "cpe", "aggregation"]
+
+# --- Vendor identity ----------------------------------------------------
+# network.device.vendor.name is kept distinct from upstream hw.vendor: it is
+# the discriminator for vendor-specific TOP-LEVEL namespaces (`<vendor>.*`,
+# e.g. `cisco.*`) under OTel system-specific naming — the discriminator value
+# equals the namespace root, the way db.system.name=cassandra pairs with
+# cassandra.* — with explicit lowercase normalization, and is paired with
+# vendor.id (IANA PEN) which hw.* does not carry.
+- key: network.device.vendor.name
+  type: string
+  stability: development
+  brief: >
+    The vendor/manufacturer of the device, normalized to lowercase.
+  note: >
+    The discriminator for vendor-specific extension namespaces. Under OTel system-specific naming the namespace root equals this value: `network.device.vendor.name=cisco` pairs with top-level `cisco.*` (product-qualified, e.g. `cisco.cdp.*`), exactly as `db.system.name=cassandra` pairs with `cassandra.*`. Normalize to the vendor's common short name in lowercase.
+  examples: ["cisco", "juniper", "arista", "nokia", "huawei"]
+
+- key: network.device.vendor.id
+  type: int
+  stability: development
+  brief: >
+    The vendor's IANA Private Enterprise Number (PEN), as found in SNMP sysObjectID.
+  note: >
+    A stable machine-readable key for the vendor, independent of string normalization. See https://www.iana.org/assignments/enterprise-numbers/.
+  examples: [9, 2636, 30065]
+
+# --- Operator metadata --------------------------------------------------
+- key: network.device.label
+  type: template[string]
+  stability: development
+  brief: >
+    An operator-assigned label on the device, the `<key>` being the label name and the value being the label value.
+  note: |
+    Open-ended operator tagging, mirroring `k8s.*.label` and
+    `network.instance.label`. Labels are entity/resource metadata;
+    because the key space is unbounded they MUST NOT be attached to
+    high-cardinality metric or flow data points.
+  examples: ["us-east-1", "production", "tier-1"]
+
+# --- Component reference (for multi-CPU/memory modular devices) ---------
+- key: network.component.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of a forwarding component (ASIC, NPU, CPU, memory pool) within the device, when telemetry must be attributed to a specific component.
+  note: |
+    Used as a metric dimension on `network.device.cpu.utilization` and
+    `network.device.memory.utilization` for modular devices with multiple
+    processors or memory pools. Related to the `hw.*` component by id
+    (`hw.id` ↔ `network.component.id`).
+
+    On fixed-form devices with a single CPU/memory, omit this attribute.
+  examples: ["rp0", "lc1-npu0", "control-plane", "fpc0"]
+
+# ==========================================================================
+# Sub-entities: chassis, module, component
+#
+# These are OPTIONAL. On a fixed-form device (CPE, pizza-box, VM)
+# the network.device IS the inventory unit — do not emit empty shells.
+# Only model them when independently replaceable or independently
+# instrumented. See docs/entity-model.md (fixed-form profile).
+# ==========================================================================
+
+# --- Chassis ------------------------------------------------------------
+- key: network.chassis.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of the chassis/enclosure, unique within the device.
+  note: >
+    On a single-chassis device this is typically a constant (e.g. "0" or the chassis serial). On a multi-chassis system (e.g. virtual chassis, stacked switches) it distinguishes members.
+  examples: ["0", "chassis-1", "member-2"]
+
+- key: network.chassis.slot
+  type: string
+  stability: development
+  brief: >
+    The physical position/slot of the chassis in a rack or virtual- chassis stack, if applicable.
+  examples: ["1", "rack3-u12"]
+
+# --- Module (line card, route processor, fabric card) -------------------
+- key: network.module.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of the module (FRU), unique within the device.
+  note: >
+    The slot name or position that identifies this module. Full identity is (`network.device.id`, `network.module.id`).
+  examples: ["0/0", "lc1", "fpc0", "slot-3", "rp0"]
+
+- key: network.module.type
+  type: string
+  stability: development
+  brief: >
+    The functional type of the module.
+  note: |
+    Well-known values (open enum):
+    `line_card`, `route_processor`, `fabric_card`, `supervisor`,
+    `power_module`, `fan_tray`.
+  examples: ["line_card", "route_processor", "fabric_card", "supervisor"]
+
+- key: network.module.parent.id
+  type: string
+  stability: development
+  brief: >
+    The `network.module.id` of the parent module, for sub-modules (e.g. a MIC/PIC inside a line card).
+  note: >
+    Enables recursive module containment. Absent for top-level modules that slot directly into the chassis.
+  examples: ["fpc0", "lc1"]
+
+# --- Component (ASIC, NPU, TCAM — forwarding-specific only) ------------
+# network.component exists ONLY for forwarding-capacity
+# telemetry that hw.* cannot express. Physical health (temperature,
+# voltage, errors) stays in hw.* keyed by hw.id.
+#
+# network.component.id is defined above (also used as a metric dimension).
+
+- key: network.component.type
+  type: string
+  stability: development
+  brief: >
+    The functional type of the forwarding component.
+  note: |
+    Well-known values (open enum):
+    `asic`, `npu`, `tcam`, `memory_pool`, `forwarding_engine`, `cpu`.
+
+    Only model a component when forwarding-specific telemetry (e.g.
+    table utilization) attaches to it. Generic health telemetry
+    (temperature, voltage) belongs on the `hw.*` component instead.
+    See docs/architecture.md (namespace layering).
+  examples: ["asic", "npu", "tcam", "forwarding_engine"]
+
+- key: network.component.resource
+  type: string
+  stability: development
+  brief: >
+    The specific forwarding resource being measured on a component.
+  note: |
+    Used as a dimension on `network.component.utilization` to
+    distinguish different table/resource types on the same component.
+
+    Well-known values (open enum):
+    `mac_table`, `tcam`, `acl`, `fib`, `lfib`, `arp`, `nd`,
+    `next_hop_group`, `ecmp`, `session_table`, `nat_table`,
+    `adjacency`, `srgb`, `srlb`, `mpls_label`, `sid`.
+
+    `nat_table` is the NAT/PAT translation-table fill (the sibling of
+    `session_table`; on a CG-NAT it is the table that exhausts first) —
+    the bounded ceiling `network.nat.translations` climbs toward, while
+    pool and port occupancy themselves are the `network.nat.*` metrics.
+
+    `srgb`/`srlb` report Segment-Routing label-block occupancy and
+    `mpls_label`/`sid` the LFIB / local-SID-table fill — the SR/MPLS
+    members of the table-fill family; the block ranges
+    themselves are `network.sr.srgb/srlb.lower/.upper` attributes.
+  examples: ["mac_table", "tcam", "fib", "srgb"]

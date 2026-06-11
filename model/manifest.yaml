@@ -1,0 +1,9 @@
+name: semantic-conventions-network
+description: >
+  OpenTelemetry Semantic Conventions for network infrastructure:
+  devices, interfaces, links, flows, protocols, optics, and active tests.
+schema_url: https://schemas.seconv.network/network-dev/0.1.0-dev
+stability: development
+dependencies:
+  - schema_url: https://opentelemetry.io/schemas/1.41.0
+    registry_path: https://github.com/open-telemetry/semantic-conventions.git@v1.41.0[model]

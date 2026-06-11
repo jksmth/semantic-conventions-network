@@ -1,0 +1,115 @@
+---
+file_format: definition/2
+
+# network-optical (endpoint) — the optical transceiver/carrier on an interface.
+#
+# Scope: this package is the OPTICAL ENDPOINT only — the carrier as
+# transmitted/received by a pluggable on a `network.interface`. It serves the
+# grey/direct-detect DOM regime (CPE, switch, DC grey/DR optics) and the
+# coherent transponder regime (400G ZR+, ROADM add/drop). Two adjacent optical
+# domains are deferred and MUST NOT reshape this endpoint model:
+#   - PON access optics (per-ONT burst RSSI, BIP/FEC, wavelength plan) →
+#     `network-access` (1:N + producer≠subject). Deferred, not ignored: next
+#     after CPE/L2.
+#   - DWDM line system (amplifier gain/tilt, ROADM degree/WSS, OMS/OTS, span
+#     loss, spectrum) → `network-optical-line`. These wrap/reference the OCh
+#     channel; they do not change it.
+#
+# hw boundary: the transceiver is a hardware FRU.
+# Its environmental telemetry is `hw.*`, NOT redefined here:
+#   - module temperature  → hw.temperature (+ hw.temperature.limit, hw.sensor_location)
+#   - supply voltage (Vcc) → hw.voltage
+#   - module health/status → hw.status
+#   - serial / vendor / part → hw.serial_number / hw.vendor / hw.model
+# `network.optical.*` carries only the optical SIGNAL (power, osnr, ber, cd,
+# pmd, bias_current) — values `hw.*` has no concept of.
+# See docs/architecture.md (namespace layering).
+#
+# Prior art: SFF-8472 (DOM), ITU-T G.698.2/G.709, OpenConfig
+# openconfig-platform-transceiver / openconfig-terminal-device.
+
+attributes:
+# --- Channel identity / relationships ----------------------------------
+- key: network.optical.channel.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of the optical channel (carrier/lane), unique within the device.
+  note: |
+    Full identity is the pair (`network.device.id`,
+    `network.optical.channel.id`). The optical channel is the optical
+    *carrier* — the one `network.*` optical entity. The optic
+    itself (the pluggable transceiver) is a `hw.*` FRU referenced by
+    `hw.id`, not a separate `network.*` entity.
+
+    For a simple single-carrier optic the channel is 1:1 with the
+    transceiver; a multi-lane module reports one channel per lane.
+  examples: ["ch-0", "xe-0/0/0-lane0", "193.1THz"]
+
+- key: network.optical.channel.type
+  type: string
+  stability: development
+  brief: >
+    The kind of optical channel (open enum).
+  note: >
+    Well-known values: `client` (grey/short-reach client optic), `line` (DWDM line-side coherent carrier), `lane` (one lane of a multi-lane module). Custom values MAY be used.
+  examples: ["client", "line", "lane"]
+
+# The channel relates to its port and its transceiver FRU by REUSING
+# existing identifiers (no new relationship keys):
+#   - network.interface.id  → the port the optic is in
+#   - hw.id                 → the transceiver hardware FRU
+
+# --- Carrier descriptors (low-cardinality entity attributes) -----------
+- key: network.optical.frequency
+  type: double
+  stability: development
+  brief: The carrier centre frequency, in THz.
+  note: >
+    Used for DWDM/coherent carriers. For flexgrid spectrum (a slot with a width, not a point) the slot model is part of the deferred `network-optical-line` domain and does not change this attribute.
+  examples: [193.1, 195.9]
+
+- key: network.optical.wavelength
+  type: double
+  stability: development
+  brief: The carrier nominal wavelength, in nm.
+  examples: [1310.0, 1550.12, 850.0]
+
+- key: network.optical.grid
+  type: string
+  stability: development
+  brief: >
+    The wavelength grid the carrier is provisioned on (open enum).
+  note: >
+    Well-known values: `flexgrid`, `50ghz`, `100ghz`, `none` (grey optic).
+  examples: ["flexgrid", "100ghz", "none"]
+
+- key: network.optical.modulation
+  type: string
+  stability: development
+  brief: >
+    The modulation format of the carrier (coherent optics; open enum).
+  examples: ["qpsk", "8qam", "16qam", "64qam"]
+
+- key: network.optical.fec.type
+  type: string
+  stability: development
+  brief: The forward-error-correction scheme in use (open enum).
+  examples: ["sd-fec", "rs-fec", "gfec"]
+
+- key: network.optical.fec.stage
+  type:
+    members:
+    - id: pre
+      value: "pre"
+      brief: Bit error ratio measured before FEC correction.
+      stability: development
+    - id: post
+      value: "post"
+      brief: Bit error ratio measured after FEC correction.
+      stability: development
+  stability: development
+  brief: >
+    Whether a bit error ratio is measured before or after FEC.
+  note: >
+    The dimension on `network.optical.ber`. Pre-FEC BER is the early degradation signal; post-FEC BER crossing zero means uncorrected errors are reaching the client.

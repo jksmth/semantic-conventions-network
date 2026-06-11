@@ -1,0 +1,64 @@
+---
+file_format: definition/2
+
+# See registry.yaml banner — FORWARD-PLANNING / REMOVABLE (DEC-139).
+# INTERIM per-entity info metrics — the hand-authored stand-in for the planned
+# automatic entity -> info-metric projection (the generic `entity_info` /
+# kube-state-metrics `*_info` pattern; entities SIG 2026-04-06 §6, and the
+# 2026-06-08 `entity_info` proposal). Each is a gauge fixed at 1 whose
+# ATTRIBUTES are the entity's DESCRIPTIVE attributes; the identity (the join
+# key) rides the associated entity on the Resource, NOT the metric. Consumers
+# JOIN operational series to these on the entity identity (design doc §6/§7).
+#
+# REMOVE when the automatic projection ships — do NOT let these become the
+# contract. Authored only for the two most-joined entities as exemplars; other
+# entities follow the same pattern if/when an interim join is actually needed.
+
+metrics:
+- name: network.device.info
+  stability: development
+  brief: >
+    INTERIM info metric for `network.device` (value always 1). Carries the device's descriptive attributes as labels so consumers can JOIN them onto operational series on `network.device.id` (the kube-state `*_info` pattern). Superseded by the automatic entity -> info projection (DEC-139).
+  note: >
+    The identity (`network.device.id`) is NOT a metric attribute — it rides the associated `network.device` entity on the Resource and is the join key. The labels below are the DESCRIPTIVE tier (§7): they live here, not stamped on every operational series. If the device/OS composition change (design doc §10.4) lands, `os.*` moves to a co-located `os` entity and out of this metric. Remove when the projection lands.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.device.name
+    requirement_level: opt_in
+  - ref: network.device.type
+    requirement_level: opt_in
+  - ref: network.device.role
+    requirement_level: opt_in
+  - ref: network.device.vendor.name
+    requirement_level: opt_in
+  - ref: hw.model
+    requirement_level: opt_in
+  - ref: os.name
+    requirement_level: opt_in
+  - ref: os.version
+    requirement_level: opt_in
+  entity_associations:
+  - network.device
+
+- name: network.interface.info
+  stability: development
+  brief: >
+    INTERIM info metric for `network.interface` (value always 1). Carries the interface's descriptive attributes as labels for JOIN onto operational series on (`network.device.id`, `network.interface.id`). Superseded by the automatic entity -> info projection (DEC-139).
+  note: >
+    Identity (`network.interface.id`, scoped by the co-present `network.device`) rides the associated entity, not the metric. Labels are the descriptive tier. Remove when the projection lands.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.interface.description
+    requirement_level: opt_in
+  - ref: network.interface.type
+    requirement_level: opt_in
+  - ref: network.interface.role
+    requirement_level: opt_in
+  - ref: network.interface.admin_state
+    requirement_level: opt_in
+  - ref: network.interface.oper_state
+    requirement_level: opt_in
+  entity_associations:
+  - network.interface

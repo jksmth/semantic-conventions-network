@@ -1,0 +1,139 @@
+---
+file_format: definition/2
+
+# network-redundancy — the deliberately-replicated-identity primitive and the
+# proprietary (non-EVPN) multi-chassis grouping (the MLAG/vPC half).
+#
+# This is a NEW identity wrinkle, distinct from the prior two: producer != subject
+# (one device reports telemetry FOR another); one logical FUNCTION split across two
+# devices (CUPS CP+UP); and one IDENTITY/ADDRESS deliberately REPLICATED across many
+# devices (this package). A fabric *intentionally* puts the same IP (and often the
+# same MAC) on many devices — anycast gateway (VM keeps its GW on a move), anycast
+# VTEP (an MLAG pair = one logical VTEP), an FHRP virtual address (VRRP/HSRP
+# active/standby), Anycast-RP. This is DESIGNED behaviour, not a misconfiguration.
+#
+# The model's identity is sound per object, but a reconciliation step that
+# correlates/dedups by IP/MAC will MERGE these distinct devices or raise a false
+# duplicate-IP alarm. So:
+#   1. `network.address.role` MARKS an address as deliberately replicated.
+#   2. THE RULE: an address marked `anycast`/`virtual` MUST NOT be used as an
+#      identity or reconciliation key — the inverse of the usual "an IP locates one
+#      device" assumption. This generalises the VRRP/HSRP virtual-MAC case and the
+#      Anycast-RP rule.
+#   3. `network.redundancy.*` GROUPS the cooperating devices by membership-by-
+#      reference — no cluster entity, no n-ary edge.
+#
+# No address entity is minted (addresses are attributes, not entities); the marking
+# rides the `network.interface` / `network.instance` / `network.tunnel` that already
+# carries the address. The MLAG/vPC DOMAIN IS the redundancy group (type=mlag/vpc);
+# its peer-link is a `network.link`; an ESI-LAG on an MLAG pair carries BOTH
+# `network.evpn.esi` and `network.redundancy.group.id`.
+#
+# Deferred (NOT blockers): FHRP protocol telemetry (VRRP/HSRP priority, preempt,
+# track, state-change) as a future FHRP package; peer-link-down / split-brain /
+# DF-change / FHRP-failover EVENTS with the shared event-envelope package; rich
+# relationship typing of the group.
+#
+# Prior art: RFC 4786 (anycast operation), RFC 5798 (VRRPv3), RFC 2281 (HSRP),
+# RFC 3446 / RFC 4610 (Anycast-RP), RFC 7432 (EVPN distributed/anycast gateway),
+# Cisco vPC / Arista MLAG / Juniper ESI-LAG.
+
+attributes:
+# --- Deliberately-replicated address marking -----------------
+- key: network.address.role
+  type:
+    members:
+    - id: unique
+      value: "unique"
+      brief: >
+        An ordinary, device-unique address (the default). Safe to use in identity/reconciliation.
+      stability: development
+    - id: anycast
+      value: "anycast"
+      brief: >
+        An all-active address that is IDENTICAL on every cooperating device by design — an anycast gateway (same SVI IP + anycast MAC on every leaf), an anycast VTEP source IP across an MLAG pair, or an Anycast-RP loopback. MUST NOT be a reconciliation/identity key.
+      stability: development
+    - id: virtual
+      value: "virtual"
+      brief: >
+        An FHRP active/standby virtual address (VRRP/HSRP) — a virtual IP and virtual MAC shared by a redundancy pair, owned by whichever member is currently active. MUST NOT be a reconciliation/identity key.
+      stability: development
+  stability: development
+  brief: >
+    The identity role of an address — whether it is device-unique or DELIBERATELY REPLICATED across cooperating devices (anycast / FHRP virtual).
+  note: >
+    Open enum, lowercase. THE RULE: an address marked `anycast` or `virtual` is shared across devices ON PURPOSE and MUST NOT be used as an identity or reconciliation key — the inverse of the usual "an IP locates one device" assumption. A descriptive attribute on the `network.interface` / `network.instance` / `network.tunnel` that carries the address; it states the *intent* so a consumer treats the non-uniqueness as designed, not a duplicate-IP fault. Generalises the virtual MAC of VRRP/HSRP. See docs/entity-model.md (the reconciliation problem).
+
+# --- Multi-device cooperation group (MLAG/vPC) -
+- key: network.redundancy.group.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of the redundancy / shared-identity group the device cooperates in (an anycast group, an MLAG/vPC domain, an FHRP group).
+  note: >
+    A MEMBERSHIP-BY-REFERENCE id: each cooperating device emits its own view carrying the same `network.redundancy.group.id`, so "every device in this anycast/HA/MLAG group" is a query over the id — no cluster entity and no n-ary edge. The MLAG/vPC DOMAIN is this group (type=mlag/vpc), with the peer-link modelled as a `network.link` between the members. Derive it from the most stable shared anchor (the MLAG domain id, the VRRP/HSRP group number scoped to its segment, the anycast service name).
+  examples: ["mlag-domain-1", "vrrp:vlan100:1", "anycast-gw:tenant-red"]
+
+- key: network.redundancy.group.type
+  type:
+    members:
+    - id: anycast
+      value: "anycast"
+      brief: >
+        An all-active anycast group sharing an `network.address.role=anycast` address (anycast gateway, anycast VTEP, Anycast-RP).
+      stability: development
+    - id: mlag
+      value: "mlag"
+      brief: >
+        A multi-chassis link-aggregation domain (MLAG) — two switches with a peer-link presenting shared LAGs / a shared VTEP.
+      stability: development
+    - id: vpc
+      value: "vpc"
+      brief: A virtual Port-Channel (vPC) domain (the same shape as MLAG).
+      stability: development
+    - id: vrrp
+      value: "vrrp"
+      brief: A VRRP group (RFC 5798) sharing a virtual IP/MAC.
+      stability: development
+    - id: hsrp
+      value: "hsrp"
+      brief: An HSRP group (RFC 2281) sharing a virtual IP/MAC.
+      stability: development
+    - id: cluster
+      value: "cluster"
+      brief: >
+        A generic high-availability cluster / active-standby pair (e.g. a firewall HA pair with a synced session table).
+      stability: development
+    - id: route_processor
+      value: "route_processor"
+      brief: >
+        An INTRA-DEVICE control-card pair — two `network.module` (`type=route_processor`) supervisors in one chassis backing each other up (active/standby). The only group type whose members are modules of a single `network.device`, not separate devices; it has no shared-address wrinkle (`network.address.role` does not apply).
+      stability: development
+  stability: development
+  brief: >
+    The kind of redundancy / shared-identity group.
+  note: >
+    Open enum, lowercase, custom values MAY be used. Most types group separate `network.device`s by shared identity (anycast/MLAG/FHRP/cluster); `route_processor` is the one INTRA-DEVICE case (a supervisor pair within a chassis). FHRP protocol telemetry (priority/preempt/track) is deferred to a future FHRP package; this names the group so the shared identity and its members are queryable now.
+
+- key: network.redundancy.role
+  type:
+    members:
+    - id: active
+      value: "active"
+      brief: >
+        The currently-active / primary member (the FHRP master, the vPC primary, the HA active node).
+      stability: development
+    - id: standby
+      value: "standby"
+      brief: The standby / secondary member (FHRP backup, HA standby node).
+      stability: development
+    - id: member
+      value: "member"
+      brief: >
+        An equal, all-active member with no primary/standby distinction (an anycast-group leaf, an all-active MLAG peer).
+      stability: development
+  stability: development
+  brief: >
+    The role of this device — or, for an intra-device route-processor pair, this `network.module` — within its redundancy group.
+  note: >
+    An ELECTED / configured role, never a health state — a `standby` member is healthy and intentional, so this is NOT folded into any `state` enum. See docs/conventions.md (state modelling). Rides the `network.device` for cross-device groups (anycast/MLAG/FHRP/cluster), or the `network.module` for an intra-device `route_processor` pair (each supervisor module carries its own `active` / `standby`). Reportable as an enum-as-attribute gauge if a failover time-series is wanted; the failover event is `network.redundancy.switchover`.

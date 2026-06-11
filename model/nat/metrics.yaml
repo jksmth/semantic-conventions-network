@@ -1,0 +1,107 @@
+---
+file_format: definition/2
+metrics:
+# === The xlate table (box-wide occupancy — the CPE/firewall signal) ========
+# Active translations number in the millions: never entities, never a
+# per-translation series (the cardinality firewall). This is the aggregate
+# occupancy GAUGE — a home CPE's NAT44 count climbing toward its ~64k ceiling,
+# or a firewall's xlate-table fill. Dimensioned ONLY by the bounded
+# `network.nat.type`; never by any 5-tuple or subscriber id.
+- name: network.nat.translations
+  stability: development
+  brief: >
+    Number of active NAT/PAT translations the device currently holds, by type.
+  note: |
+    The translation-table (xlate) occupancy — a NAT device's core runtime
+    gauge, the NAT analogue of `network.session.count`. On a home CPE doing
+    NAT44 this climbs toward the ~64k per-WAN-address port ceiling; on a
+    firewall or CG-NAT it is the xlate-table fill. Dimensioned by the
+    low-cardinality `network.nat.type`; it MUST NOT be dimensioned by any
+    5-tuple, address, or subscriber identity (the cardinality firewall).
+
+    The finite ceiling this fills toward is the
+    `network.component.utilization` (`nat_table`) resource — on a CG-NAT the
+    xlate table and the port pool exhaust long before CPU, the #1 outage mode.
+  instrument: updowncounter
+  unit: "{translation}"
+  attributes:
+  - ref: network.nat.type
+    requirement_level: recommended
+  entity_associations:
+  - network.device
+
+# === NAT pool occupancy (the CG-NAT / firewall signal) =====================
+# Two consumable resources on one pool: ADDRESSES and PORTS. Both follow the
+# `network.access.pool` count+utilisation shape, but PORT utilisation is the
+# resource that actually exhausts under PAT.
+- name: network.nat.pool.addresses
+  stability: development
+  brief: >
+    Public addresses in a NAT pool, by allocation state.
+  note: >
+    Used + free = pool size. Per-pool address occupancy. NOTE this is rarely the binding constraint under PAT — a pool exhausts on ports long before addresses (see `network.nat.port.utilization`).
+  instrument: updowncounter
+  unit: "{address}"
+  attributes:
+  - ref: network.nat.pool.state
+    requirement_level: required
+  entity_associations:
+  - network.nat.pool
+
+- name: network.nat.pool.utilization
+  stability: development
+  brief: >
+    Fraction of a NAT pool's public ADDRESSES currently allocated (used / size).
+  note: >
+    Reported as a ratio (0.0–1.0), the address sibling of `network.access.pool.utilization`. Under PAT this is the TRAP metric — it can read "low" while the pool is exhausted on ports; `network.nat.port.utilization` is the signal to alert on.
+  instrument: gauge
+  unit: "1"
+  entity_associations:
+  - network.nat.pool
+
+- name: network.nat.ports
+  stability: development
+  brief: >
+    L4 ports in a NAT pool, by allocation state.
+  note: >
+    Used + free = pool size × ~64k. The PAT consumption unit — one port per concurrent translation. This is the resource that actually exhausts on a CG-NAT, while `network.nat.pool.addresses` still shows headroom.
+  instrument: updowncounter
+  unit: "{port}"
+  attributes:
+  - ref: network.nat.pool.state
+    requirement_level: required
+  entity_associations:
+  - network.nat.pool
+
+- name: network.nat.port.utilization
+  stability: development
+  brief: >
+    Fraction of a NAT pool's L4 PORTS currently allocated (used / size) — the primary CG-NAT exhaustion signal.
+  note: >
+    Reported as a ratio (0.0–1.0). Because PAT consumes one port per concurrent flow, ports exhaust long before addresses — so THIS, not `network.nat.pool.utilization`, is the CG-NAT alert (e.g. at 0.9). The raised/cleared alarm is `network.nat.pool_exhausted`.
+  instrument: gauge
+  unit: "1"
+  entity_associations:
+  - network.nat.pool
+
+# === CG-NAT port-blocks (aggregate — per-subscriber detail is event/record) =
+- name: network.nat.port_blocks
+  stability: development
+  brief: >
+    CG-NAT port-blocks in a pool, by allocation state.
+  note: |
+    Allocated + free = total blocks (pool ports / block size). The bounded,
+    pool-level view of port-block consumption. A single subscriber's block
+    filling up is a per-subscriber silent outage INVISIBLE to this aggregate
+    and to `network.nat.port.utilization` — that is the
+    `network.nat.port_block_exhausted` event (per-subscriber), and the
+    inside↔outside binding is the `network.nat.port_block.allocated` record.
+    Per the cardinality firewall the aggregate is a metric; the per-subscriber
+    view is an event/record, never a per-subscriber series.
+  instrument: updowncounter
+  unit: "{block}"
+  attributes:
+  - ref: network.nat.port_block.state
+    requirement_level: required
+  entity_associations:
+  - network.nat.pool

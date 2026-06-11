@@ -1,0 +1,45 @@
+---
+file_format: definition/2
+
+# network-optical events. The optical DOM threshold crossing — Rx/Tx power low/high, laser
+# bias, OSNR/pre-FEC BER beyond a configured warn/alarm window. Refines the
+# shared `network.alarm` base event; the discriminator is
+# `network.alarm.cause=threshold_crossed`, with the configured limit and the
+# observed reading carried in `network.alarm.threshold.value`/`observed.value`
+# (in the metric's own unit — `dB[mW]` for power, mA for bias). Associates with
+# `network.optical.channel`, so a flapping port and its dropping Rx power
+# correlate through the channel↔interface link.
+#
+# Loss-of-signal (LOS) is the harder edge of the same family: emit
+# `network.alarm` with `cause=signal_loss` (no threshold pair) against the same
+# channel; covered by the base event, no separate refinement needed.
+event_refinements:
+- id: network.optical.threshold_crossed
+  ref: network.alarm
+  stability: development
+  brief: >
+    An optical DOM monitored value crossed a configured warn/alarm threshold — Rx power low (the dropping-light fault that precedes a link flap), Tx power low/high, laser bias high (an ageing transmitter), or a coherent OSNR / pre-FEC BER limit. The raised/cleared alarm complementing the `network.optical.power`/`.bias`/`.osnr` gauges.
+  note: |
+    `network.alarm.cause=threshold_crossed`, with
+    `network.alarm.threshold.value` (the configured limit) and
+    `network.alarm.observed.value` (the reading that crossed it) in the
+    monitored value's own unit — `dB[mW]` for power (which IS dBm), mA for
+    bias current, dB for OSNR. `network.alarm.specific_problem` carries the
+    verbatim vendor string ("Rx power low-alarm"). `severity=cleared` is the
+    clear when the value returns inside the window.
+
+    Rx-power-low is the operationally important case: it is the early warning
+    that a span/connector/transceiver is degrading before the port drops, and
+    it correlates to the port through `network.optical.channel.interface.id`.
+  entity_associations:
+  - network.optical.channel
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: Always `threshold_crossed` for this refinement.
+  - ref: network.alarm.threshold.value
+    requirement_level: recommended
+  - ref: network.alarm.observed.value
+    requirement_level: recommended
+  - ref: network.alarm.specific_problem
+    requirement_level: recommended

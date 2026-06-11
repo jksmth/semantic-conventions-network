@@ -1,0 +1,173 @@
+---
+file_format: definition/2
+metrics:
+# === Subscriber session-table load (aggregate NF view) =================
+- name: network.access.sessions
+  stability: development
+  brief: >
+    Number of subscriber sessions currently on the BNG, by state and type.
+  note: |
+    The aggregate session-table occupancy — an NF resource / control-plane
+    load signal ("how many sessions is this BNG holding"), NOT a
+    per-subscriber inventory (that is the AAA/mediation system's).
+    The session is count + record, never an entity; this is the
+    *count* half. Dimensioned by the low-cardinality `network.access.session.
+    state` and `network.access.session.type` — never by subscriber identity.
+
+    The finite session-table ceiling that this fills toward is the
+    `network.component.utilization` (`session_table`) resource.
+  instrument: updowncounter
+  unit: "{session}"
+  attributes:
+  - ref: network.access.session.state
+    requirement_level: recommended
+  - ref: network.access.session.type
+    requirement_level: recommended
+  entity_associations:
+  - network.device
+
+- name: network.access.session.setups
+  stability: development
+  brief: >
+    Subscriber sessions established (the setup-rate / calls-per-second signal), by type.
+  note: >
+    A monotonic counter of successful session establishments; its rate is the #1 BNG control-plane load signal. Pairs with `network.access.session.teardowns`.
+  instrument: counter
+  unit: "{session}"
+  attributes:
+  - ref: network.access.session.type
+    requirement_level: recommended
+  entity_associations:
+  - network.device
+
+- name: network.access.session.teardowns
+  stability: development
+  brief: >
+    Subscriber sessions torn down, by type.
+  note: >
+    A monotonic counter of session terminations (normal and abnormal). A surge is the signature of a mass-disconnect incident. The per-subscriber teardown *record* (why a given subscriber dropped) is the AAA system's / a deferred event.
+  instrument: counter
+  unit: "{session}"
+  attributes:
+  - ref: network.access.session.type
+    requirement_level: recommended
+  entity_associations:
+  - network.device
+
+# === AAA client-side (NAS view) =======================================
+- name: network.access.aaa.requests
+  stability: development
+  brief: >
+    NAS-originated AAA requests, by protocol/operation/result/server.
+  note: |
+    The BNG's *client-side* view of authenticating and accounting-transmit:
+    "can my subscribers authenticate, and are my accounting packets getting
+    through." Dimensioned by `network.access.aaa.operation`
+    (authenticate/authorize/accounting), `network.access.aaa.result`
+    (accept/reject/timeout/error), `network.access.aaa.protocol`, and the
+    `network.access.aaa.server.id` (for failover diagnosis) — all
+    low-cardinality.
+
+    This is NOT the AAA platform's authoritative auth/accounting record
+    (a separate producer); it is the NAS's own observation.
+  instrument: counter
+  unit: "{request}"
+  attributes:
+  - ref: network.access.aaa.operation
+    requirement_level: required
+  - ref: network.access.aaa.result
+    requirement_level: required
+  - ref: network.access.aaa.protocol
+    requirement_level: recommended
+  - ref: network.access.aaa.server.id
+    requirement_level: recommended
+  - ref: network.access.aaa.server.role
+    requirement_level: opt_in
+  entity_associations:
+  - network.device
+
+- name: network.access.aaa.request.duration
+  stability: development
+  brief: >
+    Latency of NAS-originated AAA requests, as observed by the client.
+  note: >
+    RADIUS/Diameter round-trip latency the BNG measured — slow AAA is a common cause of slow/failing subscriber onboarding. Dimensioned by operation, protocol, and server (low-cardinality).
+  instrument: histogram
+  unit: "s"
+  attributes:
+  - ref: network.access.aaa.operation
+    requirement_level: required
+  - ref: network.access.aaa.protocol
+    requirement_level: recommended
+  - ref: network.access.aaa.server.id
+    requirement_level: recommended
+  entity_associations:
+  - network.device
+
+- name: network.access.coa.requests
+  stability: development
+  brief: >
+    Server-originated CoA / Disconnect requests received by the NAS, by type and result.
+  note: >
+    Dynamic-authorization requests (RFC 5176) the BNG received and how it responded (ACK/NAK). A CoA storm or NAK spike is a real incident. Dimensioned by `network.access.coa.type` (coa/disconnect) and `network.access.coa.result` (ack/nak).
+  instrument: counter
+  unit: "{request}"
+  attributes:
+  - ref: network.access.coa.type
+    requirement_level: required
+  - ref: network.access.coa.result
+    requirement_level: required
+  entity_associations:
+  - network.device
+
+# === NF-local address pool ============================================
+- name: network.access.pool.addresses
+  stability: development
+  brief: >
+    Addresses/prefixes in an NF-local pool, by allocation state.
+  note: >
+    Used + free = pool size. Per-pool occupancy for capacity planning. `{address}` counts an IPv4/IPv6 address or a delegated prefix depending on `network.access.pool.type`.
+  instrument: updowncounter
+  unit: "{address}"
+  attributes:
+  - ref: network.access.pool.state
+    requirement_level: required
+  entity_associations:
+  - network.access.pool
+
+- name: network.access.pool.utilization
+  stability: development
+  brief: >
+    Fraction of an NF-local address pool currently allocated (used / size).
+  note: >
+    Reported as a ratio (0.0–1.0). Pool exhaustion is a silent subscriber-onboarding outage — this is the signal to alert on (e.g. at 0.9). The pool-exhausted *event* is deferred to the events package.
+  instrument: gauge
+  unit: "1"
+  entity_associations:
+  - network.access.pool
+
+# === Subscriber-endpoint single session (CE/CPE view) =================
+- name: network.access.session.uptime
+  stability: development
+  brief: >
+    Time since the single subscriber session on this endpoint last established, in seconds.
+  note: |
+    The CE/CPE-side counterpart to `network.device.uptime`, for the one
+    subscriber session a CPE terminates (a PPPoE dialer, an IPoE WAN).
+    Resets to zero on each session re-establishment — a low value right after
+    an alert is the "it just reconnected" signal; a short uptime that keeps
+    resetting is a flapping WAN.
+
+    Associates with the terminating `network.interface` (the dialer), NOT the
+    device — this is the single-session endpoint view, bounded and
+    cardinality-safe, distinct from the BNG aggregate
+    (`network.access.sessions`). Carry
+    `network.access.session.type`/`state`/`id` on the same interface for
+    context.
+  instrument: gauge
+  unit: "s"
+  attributes:
+  - ref: network.access.session.type
+    requirement_level: recommended
+  entity_associations:
+  - network.interface

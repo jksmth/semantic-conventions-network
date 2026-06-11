@@ -1,0 +1,109 @@
+---
+file_format: definition/2
+entities:
+- type: network.path
+  stability: development
+  brief: >
+    A forwarding path that spans multiple devices: an MPLS LSP, an SR / SRv6 policy, a TE tunnel, or an optical lightpath / media channel. Each device on the path reports its own segment and role (ingress/transit/egress).
+  note: |
+    The cross-device path-over-devices primitive (MPLS LSP, optical
+    lightpath), resolved as the cross-device sibling of `network.link`.
+
+    Identity (a path spans devices, exactly like `network.link`): full
+    identity is just `network.path.id`; it is not scoped by a single
+    `network.device`. The local termination
+    (`network.path.local.device.id` + `…interface.id`) and
+    `network.path.role` SHOULD be present so the segment can be anchored to a
+    reporting device and ordered. Each device on the path emits its own
+    segment carrying the same `network.path.id` — the membership-by-reference
+    convention (`network.link` / `network.lag` / `network.stp.instance`), so
+    the whole ordered traversal reconstructs from a query over the id with no
+    n-ary edge. See docs/entity-model.md (sub-entity identity).
+
+    `network.path.id` is to a path what `network.link.id` is to a shared
+    medium and `network.tunnel.id` is to an overlay source endpoint — the
+    three faces of the one path-over-devices primitive. Use `network.path`
+    for the cross-device traversal (label-switched / spectrum-routed) and
+    `network.tunnel` for the device-scoped overlay source (VXLAN VTEP, SD-WAN
+    TLOC).
+
+    Two orthogonal classification axes:
+    - `network.path.type` — the forwarding technology (mpls_lsp / sr_policy /
+      srv6_policy / te_tunnel / optical_lightpath).
+    - `network.path.role` — this device's position (ingress / transit /
+      egress).
+
+    Counters DO attach to a path (unlike `network.link`): a path passes the
+    entity test (bounded by config — thousands of LSPs/policies, not
+    millions), so per-LSP/segment `network.path.io` /
+    `.packets`, `network.path.label.operations` (push/swap/pop), and
+    `network.path.protection.switches` live in `metrics.yaml`. See
+    docs/conventions.md (cardinality firewall).
+
+    Label/SID transport and TE/FRR protection are AUTHORED as attributes on
+    this entity: the label
+    stack / SID list is the bounded ordered `network.path.segment_list`; the
+    per-device LFIB row is `network.path.local.in_segment`/`out_segment`; FEC,
+    SR colour, binding-SID, TE constraints, and protection state hang here.
+    SRv6 reuses the same slots with IPv6-valued SIDs (`type=srv6_policy`). The
+    device-local SID plane (prefix/node/adjacency SID, SRGB/SRLB, SRv6
+    locator/function) is `network.sr.*`/`network.srv6.*` on existing entities,
+    no new entity.
+
+    Deferred (NOT blockers for this entity):
+    - The optical lightpath's per-degree span-loss / OMS-OTS telemetry
+      attaches to its segments by the same id.
+    - Events — LSP up/down, label-exhaustion, protection-switch (before/after
+      path) — to the shared event-envelope package; the
+      `network.path.protection.switches` counter is the reconstructable
+      stand-in.
+    - Rich relationship typing of the ordered traversal (is-ingress-of /
+      is-transit-of) awaits the OTel edge/relationship model.
+  identity:
+  - ref: network.path.id
+  description:
+  - ref: network.path.type
+    requirement_level: recommended
+  - ref: network.path.role
+    requirement_level: recommended
+  - ref: network.path.local.device.id
+    requirement_level: recommended
+  - ref: network.path.local.interface.id
+    requirement_level: opt_in
+  - ref: network.path.signaling
+    requirement_level: opt_in
+  - ref: network.path.state
+    requirement_level: recommended
+  - ref: network.path.native_state
+    requirement_level: opt_in
+  # Label/SID transport stack
+  - ref: network.path.fec
+    requirement_level: opt_in
+  - ref: network.path.segment_list
+    requirement_level: opt_in
+  - ref: network.path.color
+    requirement_level: opt_in
+  - ref: network.path.binding_sid
+    requirement_level: opt_in
+  - ref: network.path.local.in_segment
+    requirement_level: opt_in
+  - ref: network.path.local.out_segment
+    requirement_level: opt_in
+  # Traffic engineering
+  - ref: network.path.bandwidth.reserved
+    requirement_level: opt_in
+  - ref: network.path.te.metric
+    requirement_level: opt_in
+  - ref: network.path.te.affinity
+    requirement_level: opt_in
+  - ref: network.path.srlg
+    requirement_level: opt_in
+  - ref: network.path.computation
+    requirement_level: opt_in
+  # FRR / TI-LFA protection
+  - ref: network.path.protection.role
+    requirement_level: opt_in
+  - ref: network.path.protection.type
+    requirement_level: opt_in
+  - ref: network.path.protection.active
+    requirement_level: opt_in

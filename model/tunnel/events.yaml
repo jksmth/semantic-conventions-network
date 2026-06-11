@@ -1,0 +1,43 @@
+---
+file_format: definition/2
+
+# network-tunnel events (events-envelope design). The overlay tunnel up/down
+# event named on the entity (model/tunnel/entities.yaml "the tunnel/BFD up-down
+# + path-change/SLA-violation events"). ONE state refinement for the
+# tunnel/VTEP/TLOC liveness transition.
+#
+#   - network.tunnel.state.changed — a GRE/IPsec tunnel, VXLAN VTEP or SD-WAN
+#     TLOC went up/down (often driven by a BFD/liveness session). Refines
+#     `network.state.changed`; pairs with `network.tunnel.state` + `…native_state`.
+#
+# The richer path-change / SLA-violation signal is an observation
+# RECORD (per-path measurement detail), a separate third-category follow-on
+# — not authored here.
+#
+# Associates `network.tunnel` (the device-scoped local source endpoint).
+event_refinements:
+- id: network.tunnel.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    An overlay tunnel source endpoint changed operational state — a GRE/IPsec tunnel, a VXLAN VTEP, or an SD-WAN TLOC went up or down (typically on a BFD/liveness transition). The transition the `network.tunnel.state` gauge shows but cannot reconstruct after a restart.
+  note: |
+    `network.event.state.dimension=operational`. Native endpoints in
+    `network.event.state.previous`/`current` carry the verbatim vendor tunnel
+    state (`network.tunnel.native_state`); the coarse normalized value stays on
+    `network.tunnel.state`. For a single point-to-point tunnel
+    the affected remote is `network.tunnel.peer.address`; a VTEP/TLOC mesh
+    learns its peers dynamically (per-peer liveness is a metric dimension, not
+    N tunnel entities).
+
+    Carry `network.alarm.cause=connectivity_lost` (opt-in) on the down edge
+    when the drop is a fault rather than a planned teardown.
+  entity_associations:
+  - network.tunnel
+  attributes:
+  - ref: network.event.state.current
+    requirement_level: required
+    note: The verbatim new tunnel state (e.g. "down").
+  - ref: network.event.state.previous
+    requirement_level: recommended
+    note: The verbatim prior tunnel state (e.g. "up").

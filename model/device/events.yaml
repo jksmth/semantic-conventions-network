@@ -1,0 +1,86 @@
+---
+file_format: definition/2
+
+# network-device events (events-envelope design). Two refinements the device
+# itself emits. See docs/conventions.md (state modelling).
+#
+#   - network.device.state.changed  — the device run-state transition: reboot
+#     (SNMP coldStart/warmStart) and administrative lock/unlock. Refines the
+#     shared `network.state.changed`. The `network.device.uptime` gauge resets
+#     to zero on the same reboot; this event is the point-in-time record the
+#     gauge cannot convey (you cannot tell a fresh boot from a never-rebooted
+#     box from uptime alone at the instant of collection).
+#
+#   - network.hardware.alarm  — the hardware/environmental alarm bridge:
+#     fan failure, PSU loss, an over-temperature threshold. Fans,
+#     PSUs and temperatures are `hw.*`; the ALARM about them is
+#     emitted in this namespace as a `network.alarm` refinement associated with
+#     `network.device` and referencing the failing FRU by `hw.id`. We do NOT
+#     redefine the hw status leaf. See the coordination note below.
+#
+# A device CONFIGURATION CHANGE is deliberately NOT modelled here as a
+# state/alarm event: it is an observation RECORD — it names what changed, by
+# whom, and a config version/commit-id,
+# carries per-change identity, and belongs with a future config/audit record,
+# not the state-transition envelope. Recorded so nobody force-fits it into
+# `network.state.changed` (a config change is not a transition between named
+# operational states).
+event_refinements:
+- id: network.device.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    A network device changed run state — most importantly a restart (the SNMP coldStart/warmStart trap) or an administrative power/lock transition. The reboot the `network.device.uptime` reset implies but cannot timestamp.
+  note: |
+    `network.event.state.dimension=operational` for an unplanned reboot/crash
+    (the device went down→up on its own); `administrative` for an operator
+    power-cycle, shutdown, or maintenance lock. Native endpoints in
+    `network.event.state.previous`/`current` (e.g. "running"→"rebooting", or
+    the vendor's coldStart/warmStart term).
+
+    On the down→up edge of an unexpected restart, carry
+    `network.alarm.cause=power_failure` (opt-in) if the reboot is attributable
+    to power loss — the CPE dying-gasp case.
+  entity_associations:
+  - network.device
+
+- id: network.hardware.alarm
+  ref: network.alarm
+  stability: development
+  brief: >
+    A hardware/environmental alarm on the device — fan failure, PSU/PoE loss, or an over-/under-temperature threshold crossing on a FRU whose environmental telemetry lives in `hw.*`. The `hw.*`↔event bridge: the condition is measured under `hw.*`; the alarm notification is emitted here.
+  note: |
+    Emitted against `network.device`, referencing the affected FRU by `hw.id`
+    (opt-in) — the same id the `hw.temperature`/`hw.fan`/`hw.power` telemetry
+    reports under. Typical shapes:
+      - fan failure         → cause=`power_failure`,    category=`equipment`
+      - PSU / PoE loss      → cause=`power_failure`,    category=`equipment`
+      - over-temperature    → cause=`threshold_crossed`,category=`environmental`
+        + `network.alarm.threshold.value`/`observed.value` (in the hw unit, Cel)
+
+    COORDINATION (the one event that crosses a namespace boundary):
+    this resolves the bridge from the network side — we emit the alarm in
+    `network.*` keyed by `hw.id`, and do not redefine the upstream hw status
+    leaf. Whether the upstream `hw.*` semconv should instead own a generic
+    `hw`-namespaced alarm (so non-network hosts get the same fan/PSU alarm) is
+    an open question for the hw.* maintainers; if they adopt one, this
+    refinement becomes a thin alias. Until then, network producers have a
+    working, validated home for the trap.
+  entity_associations:
+  - network.device
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: >
+      `power_failure` (fan/PSU/PoE) or `threshold_crossed` (temperature).
+  - ref: network.alarm.category
+    requirement_level: recommended
+    note: "`equipment` for fan/PSU faults, `environmental` for temperature."
+  - ref: hw.id
+    requirement_level: opt_in
+    note: >
+      The `hw.*` FRU the alarm is about (the fan/PSU/sensor id), correlating the alarm with its `hw.temperature`/`hw.*` telemetry.
+  - ref: network.alarm.threshold.value
+    requirement_level: opt_in
+  - ref: network.alarm.observed.value
+    requirement_level: opt_in

@@ -1,0 +1,40 @@
+---
+file_format: definition/2
+
+# network-link events (events-envelope design). The topology-discovery events
+# named on the entity (model/link/entities.yaml "the network.link.discovered /
+# network.link.lost events"). A link appearing or disappearing is the lifecycle
+# TRANSITION of a durable cross-device entity, so per the two-shape discipline
+# the two named events collapse into ONE `network.state.changed` refinement
+# keyed by previous/current — NOT two bespoke event names.
+#
+# Associates `network.link` (cross-device identity, not device-scoped);
+# the head-end / local termination that observed the change is
+# `network.link.local.device.id` + `…interface.id`.
+event_refinements:
+- id: network.link.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    A topology link was discovered or lost, or changed operational state — a new LLDP/CDP adjacency appeared, a point-to-point interconnect dropped, a shared-medium member came or went. The single event behind the "link.discovered" / "link.lost" pair: discovery is the absent→present (or down→up) edge, loss the present→absent (or up→down) edge.
+  note: |
+    `network.event.state.dimension=operational`. Native endpoints in
+    `network.event.state.previous`/`current` carry the verbatim link state
+    (the `network.link.state` vocabulary — e.g. "up"→"down", or
+    "absent"→"up" for a fresh discovery); the coarse normalized current value
+    stays on the `network.link.state` gauge. The discovering
+    device + port are `network.link.local.device.id`/`…interface.id`; on a
+    point-to-point link the far end is `network.link.remote.*`.
+
+    Carry `network.alarm.cause=connectivity_lost` (opt-in) on the loss edge
+    when an unexpected link-down is to be treated as a fault rather than a
+    planned teardown.
+  entity_associations:
+  - network.link
+  attributes:
+  - ref: network.event.state.current
+    requirement_level: required
+    note: The verbatim new link state (e.g. "down", or "up" for a discovery).
+  - ref: network.event.state.previous
+    requirement_level: recommended
+    note: The verbatim prior state ("up", or "absent" for a first discovery).

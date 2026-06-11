@@ -1,0 +1,163 @@
+---
+file_format: definition/2
+attributes:
+- key: network.observer.id
+  type: string
+  stability: development
+  brief: >
+    A stable, unique identifier for the observer (the entity producing or relaying the telemetry).
+  note: |
+    This attribute is MANDATORY when producer ≠ subject
+    (i.e. when the telemetry is about a device/interface/flow that the
+    observer itself is not). When a device self-reports, this is absent
+    or equals `network.device.id`.
+
+    This is a Resource-level attribute — it identifies
+    who produced/relayed the telemetry, not a per-data-point dimension.
+    A re-collection by a different observer changes one resource
+    attribute, not every series.
+  examples: ["collector-01.noc.example.com", "probe-us-east-1", "vmanage-1"]
+
+- key: network.observer.type
+  type:
+    members:
+    - id: collector
+      value: "collector"
+      brief: >
+        A passive flow/telemetry collector (e.g. IPFIX/NetFlow/sFlow receiver).
+      stability: development
+    - id: probe
+      value: "probe"
+      brief: >
+        A passive network probe or tap (observes traffic without participating).
+      stability: development
+    - id: agent
+      value: "agent"
+      brief: >
+        An active synthetic test agent (e.g. ThousandEyes, Catchpoint).
+      stability: development
+    - id: firewall
+      value: "firewall"
+      brief: >
+        A firewall reporting flow/deny telemetry about traffic it processes (device = observer = enforcer).
+      stability: development
+    - id: packet_broker
+      value: "packet_broker"
+      brief: >
+        A network packet broker (NPB) that filters/replicates traffic to monitoring tools.
+      stability: development
+    - id: controller
+      value: "controller"
+      brief: >
+        A management controller reporting on behalf of managed devices (e.g. WLC for APs, vManage for SD-WAN edges, OLT for ONTs).
+      stability: development
+    - id: ebpf
+      value: "ebpf"
+      brief: >
+        An eBPF-based flow/packet agent running on a host.
+      stability: development
+  stability: development
+  brief: >
+    The functional type of the observer.
+  note: |
+    Classifies the observer's relationship to the traffic/telemetry it
+    reports. Aligns with ECS `observer.type`. This is an open enum —
+    custom values MAY be used.
+
+- key: network.observer.collection.method
+  type:
+    members:
+    - id: snmp
+      value: "snmp"
+      brief: SNMP polling (GET/GETBULK/WALK).
+      stability: development
+    - id: snmp_trap
+      value: "snmp_trap"
+      brief: >
+        SNMP notifications — traps (unacknowledged) or informs (acknowledged), RFC 3413/3877. The push transport for EVENTS (as opposed to the `snmp` polling method for metrics): a `linkDown`, `bgpBackwardTransition` or Alarm-MIB notification arrives this way.
+      stability: development
+    - id: syslog
+      value: "syslog"
+      brief: >
+        Syslog (RFC 5424) — semi-structured event/log messages. A best-effort event transport: the mnemonic discriminates the event and the free text is preserved verbatim (the native facet); lower fidelity than structured telemetry.
+      stability: development
+    - id: gnmi
+      value: "gnmi"
+      brief: gNMI (gRPC Network Management Interface) streaming or polling.
+      stability: development
+    - id: netconf
+      value: "netconf"
+      brief: NETCONF (RFC 6241) get/subscription.
+      stability: development
+    - id: ipfix
+      value: "ipfix"
+      brief: IPFIX (RFC 7011) flow export.
+      stability: development
+    - id: netflow
+      value: "netflow"
+      brief: Cisco NetFlow v5/v9 flow export.
+      stability: development
+    - id: sflow
+      value: "sflow"
+      brief: sFlow (RFC 3176) sampled flow/counter export.
+      stability: development
+    - id: streaming_telemetry
+      value: "streaming_telemetry"
+      brief: >
+        Vendor-native streaming telemetry (e.g. gRPC dial-out that is not gNMI).
+      stability: development
+    - id: bmp
+      value: "bmp"
+      brief: BGP Monitoring Protocol (RFC 7854).
+      stability: development
+    - id: tap
+      value: "tap"
+      brief: Physical or virtual TAP / SPAN / mirror port.
+      stability: development
+    - id: ebpf
+      value: "ebpf"
+      brief: eBPF-based in-kernel observation.
+      stability: development
+    - id: omci
+      value: "omci"
+      brief: >
+        ONU Management and Control Interface (ITU-T G.988) — the OLT relays ONU telemetry over OMCI (producer ≠ subject).
+      stability: development
+    - id: capwap
+      value: "capwap"
+      brief: >
+        CAPWAP (RFC 5415) — a WLC relays AP and station telemetry over the control tunnel (producer ≠ subject).
+      stability: development
+    - id: tr069
+      value: "tr069"
+      brief: >
+        CWMP / TR-069 — an ACS collects from home/SMB CPE (the largest-footprint access management protocol).
+      stability: development
+    - id: usp
+      value: "usp"
+      brief: >
+        USP / TR-369 — the successor to TR-069 for CPE management.
+      stability: development
+    - id: vmanage
+      value: "vmanage"
+      brief: >
+        An SD-WAN management controller (e.g. Cisco vManage) relays telemetry for the edge fleet over the management plane — the controller-relayed producer ≠ subject case on an overlay WAN (the third such technology after PON `omci` and WiFi `capwap`).
+      stability: development
+    - id: tl1
+      value: "tl1"
+      brief: >
+        TL1 (Transaction Language 1, Telcordia GR-831) — the legacy element-management interface still common on optical transport / DWDM line systems.
+      stability: development
+  stability: development
+  brief: >
+    The method used by the observer to collect telemetry from the subject.
+  note: |
+    Important for interpreting data quality: the same counter from
+    5-minute SNMP polling vs 1-second gNMI streaming has very different
+    resolution and staleness characteristics.
+
+    This is an open enum — custom values MAY be used for methods not
+    yet in the well-known set. The controller-relay family (`omci` for PON,
+    `capwap` for WiFi, `vmanage` for SD-WAN) shares the producer ≠ subject
+    shape; `tr069`/`usp` are CPE management; `tl1` is optical
+    transport element management.

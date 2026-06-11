@@ -1,0 +1,175 @@
+---
+file_format: definition/2
+
+# network-common — shared vocabulary referenced by the control-plane,
+# routing, and (future) session packages.
+#
+# Today this carries the cross-protocol address-family enum and the
+# normalized control-plane health-state enum + native-state companion
+# (the "normalized + native" pattern, README §State Modelling / Principle 10).
+# See docs/conventions.md (state modelling).
+#
+# Upstream attributes reused verbatim (not redefined here):
+#   - network.io.direction   (transmit | receive) on protocol message counters
+#   - error.type             classification on protocol error counters
+
+attributes:
+# --- Address family (AFI/SAFI; shared by neighbor + routing) -----------
+# This is the CONTROL-PLANE routing address family (combined AFI/SAFI),
+# NOT the data-plane IP version. It is deliberately distinct from upstream
+# `network.type` (ipv4|ipv6, the L3 protocol of observed traffic) — see
+# the note below. Every value is an explicit AFI/SAFI so it can never be
+# mistaken for the transport IP version.
+# See docs/conventions.md (naming rules).
+- key: network.address_family
+  type:
+    members:
+    - id: ipv4_unicast
+      value: "ipv4_unicast"
+      brief: IPv4 unicast (AFI 1 / SAFI 1).
+      stability: development
+    - id: ipv6_unicast
+      value: "ipv6_unicast"
+      brief: IPv6 unicast (AFI 2 / SAFI 1).
+      stability: development
+    - id: ipv4_multicast
+      value: "ipv4_multicast"
+      brief: IPv4 multicast (AFI 1 / SAFI 2).
+      stability: development
+    - id: ipv6_multicast
+      value: "ipv6_multicast"
+      brief: IPv6 multicast (AFI 2 / SAFI 2).
+      stability: development
+    - id: ipv4_labeled_unicast
+      value: "ipv4_labeled_unicast"
+      brief: IPv4 labeled-unicast / 6PE-style MPLS (AFI 1 / SAFI 4).
+      stability: development
+    - id: ipv6_labeled_unicast
+      value: "ipv6_labeled_unicast"
+      brief: IPv6 labeled-unicast (AFI 2 / SAFI 4).
+      stability: development
+    - id: vpnv4_unicast
+      value: "vpnv4_unicast"
+      brief: MPLS L3VPN IPv4 (AFI 1 / SAFI 128).
+      stability: development
+    - id: vpnv6_unicast
+      value: "vpnv6_unicast"
+      brief: MPLS L3VPN IPv6 (AFI 2 / SAFI 128).
+      stability: development
+    - id: l2vpn_evpn
+      value: "l2vpn_evpn"
+      brief: >
+        BGP EVPN (AFI 25 / SAFI 70). EVPN is a BGP address family, not a protocol value.
+      stability: development
+    - id: l2vpn_vpls
+      value: "l2vpn_vpls"
+      brief: BGP-signalled VPLS (AFI 25 / SAFI 65).
+      stability: development
+    - id: bgp_ls
+      value: "bgp_ls"
+      brief: BGP Link-State / BGP-LS (AFI 16388 / SAFI 71).
+      stability: development
+  stability: development
+  brief: >
+    The control-plane routing address family (combined IANA AFI/SAFI) a routing/control object operates on.
+  note: |
+    The AFI/SAFI a BGP session negotiates, or that a RIB count is
+    partitioned by — the control-plane "address-family ... " config
+    stanza, modelled as one combined value (matching OpenConfig
+    `AFI_SAFI_TYPE` and the IANA AFI + SAFI registries).
+
+    **Distinct from upstream `network.type`.** `network.type`
+    (Stable: `ipv4`|`ipv6`) is the *data-plane* L3 protocol of observed
+    traffic — the IP version of a packet/connection. This attribute is
+    the *control-plane* classification of routing information and is
+    orthogonal: a single BGP session over IPv6 transport
+    (`network.type=ipv6`) may carry `ipv4_unicast`, `vpnv4_unicast`, and
+    `l2vpn_evpn` families at once, and `network.type` has no values for
+    VPN/EVPN/VPLS/BGP-LS nor any way to distinguish unicast from
+    multicast from labeled-unicast within one IP version. The two are
+    never substituted for one another.
+
+    An open enum — values normalized to lowercase; custom values MAY be
+    used for families not listed (e.g. `ipv4_flowspec`, `ipv4_sr_te`,
+    `rt_constraint`). IGP topologies carry the IP family they enable
+    (OSPFv2/IS-IS-v4 → `ipv4_unicast`, OSPFv3/IS-IS-v6 → `ipv6_unicast`);
+    the OSI CLNS transport itself is not a routing address family here.
+
+    `evpn` is the `l2vpn_evpn` *family* of a BGP neighbour
+    (`network.neighbor.protocol=bgp`), never a protocol value; `vxlan`
+    is data-plane encapsulation, not an address family. Encapsulations
+    (`mpls`, `ethernet`) are NOT address families and are excluded.
+
+# --- Normalized control-plane health state -----------------------------
+# The coarse, cross-protocol enum. Every neighbour/session state machine
+# maps onto these five values; the verbatim protocol term is preserved
+# alongside in `network.neighbor.native_state`.
+- key: network.neighbor.state
+  type:
+    members:
+    - id: up
+      value: "up"
+      brief: >
+        The adjacency/session is fully established and healthy (e.g. BGP `Established`, OSPF `Full`/`2-Way`-as-intended, IS-IS `Up`, BFD `Up`, LACP `Collecting_Distributing`).
+      stability: development
+    - id: connecting
+      value: "connecting"
+      brief: >
+        The adjacency/session is in the process of forming and has not yet reached its healthy steady state (e.g. BGP `Connect`/`Active`/`OpenSent`/`OpenConfirm`, OSPF `Init`/`ExStart`/`Exchange`/`Loading`, IS-IS/BFD `Init`).
+      stability: development
+    - id: degraded
+      value: "degraded"
+      brief: >
+        The adjacency/session is established but impaired (e.g. a LAG up but below its configured min-links, or a session flapping within an observation window). Use only when the protocol exposes an explicit impaired-but-up condition.
+      stability: development
+    - id: down
+      value: "down"
+      brief: >
+        The adjacency/session is not established (e.g. BGP `Idle`, OSPF `Down`, IS-IS `Down`, BFD `Down`/`AdminDown`, an aged-out LLDP/PIM neighbour).
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: The state cannot be determined.
+      stability: development
+  stability: development
+  brief: >
+    The normalized, cross-protocol health state of a protocol adjacency/session.
+  note: |
+    The coarse value in the "normalized + native" pattern (README
+    §State Modelling, Principle 10). No single
+    enum can faithfully represent BGP, OSPF, IS-IS, BFD, LACP, and
+    LLDP state machines, so the verbatim protocol term is always
+    preserved in `network.neighbor.native_state`.
+
+    Used both as a `network.neighbor` descriptive attribute (state at
+    rest) and, when authored, as the enum-as-attribute dimension on a
+    current-state gauge (the K8s `status.phase` pattern).
+
+    Mapping table — `native_state` carries the exact term:
+
+    | Protocol | up | connecting | down |
+    |----------|----|-----------|------|
+    | BGP | Established | Connect, Active, OpenSent, OpenConfirm | Idle |
+    | OSPF/OSPFv3 | Full, 2-Way* | Attempt, Init, ExStart, Exchange, Loading | Down |
+    | IS-IS | Up | Init | Down |
+    | BFD | Up | Init | Down, AdminDown |
+    | LACP | Collecting_Distributing | Attached, Waiting, Collecting | Detached |
+    | LLDP | (neighbour present) | — | (TTL aged out) |
+    | PIM | (neighbour present) | — | (hold-time expired) |
+
+    *OSPF `2-Way` is a **healthy steady state** for non-DR/BDR neighbour
+    pairs on broadcast/NBMA segments and normalizes to `up`; an operator
+    detecting a pair *stuck* at `2-Way` that should reach `Full` uses
+    `native_state` to disambiguate. Elected/role states (OSPF DR/BDR,
+    IGMP querier/non-querier) are NOT health states — they are carried
+    by protocol-specific role attributes (deferred to the per-protocol
+    packages), never folded into this enum.
+
+- key: network.neighbor.native_state
+  type: string
+  stability: development
+  brief: >
+    The verbatim, protocol-/vendor-native state string, preserved alongside the normalized `network.neighbor.state`.
+  note: >
+    The exact term as reported by the device (e.g. "Established", "Full", "2-Way", "Collecting_Distributing"). Carries the fidelity the normalized enum deliberately discards.
+  examples: ["Established", "Full", "2-Way", "Init", "Collecting_Distributing"]

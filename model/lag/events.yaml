@@ -1,0 +1,55 @@
+---
+file_format: definition/2
+
+# network-lag events (events-envelope design). The LAG/bundle events named on
+# the entity (model/lag/entities.yaml
+# "LAG events — member up/down, below-min-links, bundle down"). Two refinements:
+#
+#   - network.lag.state.changed — the BUNDLE up↔down transition; refines
+#     `network.state.changed`. Pairs with the `network.lag.state` gauge +
+#     `network.lag.native_state`. (A single MEMBER port up/down is an ordinary
+#     `network.interface.state.changed` on that member — not minted again here.)
+#   - network.lag.degraded — the bundle fell below its `min_links` (lost members
+#     but may still be partially up, or went down because too few members
+#     remain); refines `network.alarm` (cause=`redundancy_lost`).
+#
+# Both associate `network.lag` (the bundle view, device-scoped).
+event_refinements:
+- id: network.lag.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    A link-aggregation bundle changed operational state (up↔down) — the aggregate the `network.lag.state` gauge shows but cannot reconstruct after a restart. Distinct from a single member port flap (which is an ordinary `network.interface.state.changed`); this is the BUNDLE's roll-up.
+  note: |
+    `network.event.state.dimension=operational`. Native endpoints in
+    `network.event.state.previous`/`current` carry the verbatim vendor bundle
+    state (`network.lag.native_state`); the coarse normalized value stays on
+    `network.lag.state`. A bundle that is up but running on fewer
+    than `network.lag.min_links` members SHOULD also raise
+    `network.lag.degraded`.
+  entity_associations:
+  - network.lag
+
+- id: network.lag.degraded
+  ref: network.alarm
+  stability: development
+  brief: >
+    A LAG dropped below its configured minimum number of active members (`min_links`) — the bundle lost redundancy/capacity or went down entirely because too few members remain. The raised/cleared alarm complementing the `network.lag.members` list and `network.lag.min_links` threshold.
+  note: |
+    `network.alarm.cause=redundancy_lost` (the bundle lost member redundancy);
+    `network.alarm.category=processing_error`. `network.alarm.specific_problem`
+    carries the verbatim condition ("below min-links: 1/2 active",
+    "bundle down — no active members"). `severity=cleared` when enough members
+    rejoin to meet `min_links` again. Associates `network.lag`; for a
+    multi-chassis bundle the shared `network.evpn.esi` / `network.redundancy.group.id`
+    on the bundle relate the two chassis.
+  entity_associations:
+  - network.lag
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: Always `redundancy_lost` for this refinement.
+  - ref: network.alarm.specific_problem
+    requirement_level: recommended
+  - ref: network.alarm.category
+    requirement_level: opt_in

@@ -1,0 +1,37 @@
+---
+file_format: definition/2
+entities:
+- type: network.observer
+  stability: development
+  brief: >
+    The entity producing or relaying network telemetry: a collector, probe, active test agent, controller, or any system that reports about network subjects it is not.
+  note: |
+    When telemetry is produced about a network element by a
+    separate party, the OTel Resource represents the SUBJECT (the router/
+    ONT/AP), not the producer. The observer is identified by
+    `network.observer.id` as a Resource-level attribute alongside the
+    subject's identifying attributes.
+
+    One mechanism covers both managed relay (OLT→ONT,
+    WLC→AP, vManage→edge) and unmanaged observation (collector→router).
+    Whether a management relationship exists is expressed by the
+    observer/subject relationship type, not a second pattern.
+
+    "Who produced this" (observer) and "what is the subject
+    attached to" (topological parent) are two distinct relationships,
+    never collapsed.
+
+    When a device self-reports (producer = subject), `network.observer.id`
+    is absent or equals `network.device.id`.
+
+    The observer entity is NOT the subject of the telemetry — it is
+    metadata about the *provenance* of the telemetry. The open question
+    of how an observer attaches entity context to third-party subjects
+    is pending OTel entities SIG work.
+  identity:
+  - ref: network.observer.id
+  description:
+  - ref: network.observer.type
+    requirement_level: recommended
+  - ref: network.observer.collection.method
+    requirement_level: recommended

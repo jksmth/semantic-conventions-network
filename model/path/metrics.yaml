@@ -1,0 +1,65 @@
+---
+file_format: definition/2
+
+# network-path metrics — per-LSP/policy traffic, label operations, and the
+# protection-switch counter.
+#
+# Counters attach to a `network.path` — the inverse of `network.link`, where
+# counters stay off the topology edge. A path passes the entity test (bounded
+# by config: a device has thousands of LSPs/policies, not the millions of
+# routes/MACs that are counts), so the traffic ON the path is legitimately
+# per-path. Each device reports the counters for its own segment (carrying the
+# shared `network.path.id` + its `network.path.role`).
+# See docs/conventions.md (cardinality firewall).
+
+metrics:
+- name: network.path.io
+  stability: development
+  brief: >
+    Total bytes carried on this path (segment), by direction.
+  note: >
+    Per-LSP / per-SR-policy / per-segment traffic — the "no per-LSP traffic counter" gap. Mirrors `network.interface.io`: one metric with `network.io.direction`, monotonic counter (resets handled by the backend). Reported by the device for its own segment on the path.
+  instrument: counter
+  unit: "By"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  entity_associations:
+  - network.path
+
+- name: network.path.packets
+  stability: development
+  brief: >
+    Total packets carried on this path (segment), by direction.
+  instrument: counter
+  unit: "{packet}"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  entity_associations:
+  - network.path
+
+- name: network.path.label.operations
+  stability: development
+  brief: >
+    Total MPLS/SR label-stack operations performed for this path, by operation.
+  note: >
+    The transit LSR's entire workload (the missing push/swap/pop counter). `network.path.label.operation` (push/swap/pop) is the dimension — a transit segment is dominated by `swap`, an ingress by `push`, an egress by `pop`. The one-counter-plus-discriminator idiom.
+  instrument: counter
+  unit: "{operation}"
+  attributes:
+  - ref: network.path.label.operation
+    requirement_level: required
+  entity_associations:
+  - network.path
+
+- name: network.path.protection.switches
+  stability: development
+  brief: >
+    Total protection switchovers (FRR/TI-LFA activations) for this path.
+  note: >
+    The post-restart-reconstructable count of fast-reroute activations — the `network.neighbor.state_changes` pattern applied to path protection. Complements the current-state `network.path.protection.active` attribute. The switchover *event* (with before/after path) defers to the shared event-envelope package.
+  instrument: counter
+  unit: "{switch}"
+  entity_associations:
+  - network.path

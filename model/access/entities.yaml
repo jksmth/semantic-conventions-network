@@ -1,0 +1,27 @@
+---
+file_format: definition/2
+entities:
+- type: network.access.pool
+  stability: development
+  brief: >
+    An NF-local address pool a BNG/BRAS allocates subscriber addresses or delegated prefixes from.
+  note: |
+    The pool the network function itself owns and allocates from —
+    a bounded, durable resource with telemetry over time, so an entity.
+    Externally-assigned addressing (RADIUS-framed
+    addresses, external DHCP servers, upstream IPAM) is a different
+    producer's concern and is out of scope.
+
+    Identity is scoped by device: the full identity is
+    (`network.device.id`, `network.access.pool.id`); the owning
+    `network.device` is expected in the same Resource. See
+    docs/entity-model.md (sub-entity identity).
+
+    Pool *exhaustion* is a silent subscriber-onboarding outage; the
+    utilisation metric (`network.access.pool.utilization`) is the signal to
+    alert on. The pool-exhausted *event* is deferred to the events package.
+  identity:
+  - ref: network.access.pool.id
+  description:
+  - ref: network.access.pool.type
+    requirement_level: recommended

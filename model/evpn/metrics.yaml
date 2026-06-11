@@ -1,0 +1,46 @@
+---
+file_format: definition/2
+metrics:
+- name: network.evpn.routes
+  stability: development
+  brief: >
+    Number of BGP-EVPN routes, by route type and selection stage.
+  note: |
+    EVPN routes are a COUNT, never per-route entities — a
+    fabric holds large numbers of Type-2 MAC/IP advertisements. This is a
+    DEDICATED EVPN count rather than a `route_type` dimension on
+    `network.routing.routes`: EVPN routes are not all "routes" in
+    the unicast-RIB sense — a Type-3 (imet) is a BUM flood-list join and a
+    Type-4 is an Ethernet-Segment/DF election — so overloading the unicast RIB
+    metric (whose `route.state` is the Adj-RIB-In/Out/active model) would
+    strain its meaning. A sibling metric keeps the unicast RIB clean and gives
+    EVPN its own home.
+
+    Dimensions:
+    - `network.evpn.route_type` — T1-T5 (ethernet_ad / mac_ip / imet /
+      ethernet_segment / ip_prefix). The three operator signals this exposes:
+      mac_ip churn = MAC mobility / a moving VM; imet = BUM mesh membership;
+      ip_prefix = external prefix reachability.
+    - `network.routing.route.state` — reused where it applies
+      (received / advertised / active / total), e.g. EVPN Adj-RIB-In vs
+      Adj-RIB-Out churn.
+
+    Associates with `network.instance`: EVPN routes are per EVI / forwarding
+    context (the `l2vsi` MAC-VRF or the `l2l3` IRB instance), so the owning
+    `network.instance` (and its `network.device`) are expected in the same
+    Resource.
+
+    The Type-2 dual-population: a single mac_ip advertisement is
+    also the `control_plane` source of `network.l2.mac.entries` (L2) and
+    `network.l3.adjacency.entries` (L2/L3) and, with a host route, the IP-VRF
+    `network.routing.routes` (L3). That fusion is documented on
+    `network.evpn.route_type`, not double-counted here.
+  instrument: updowncounter
+  unit: "{route}"
+  attributes:
+  - ref: network.evpn.route_type
+    requirement_level: required
+  - ref: network.routing.route.state
+    requirement_level: recommended
+  entity_associations:
+  - network.instance

@@ -1,0 +1,82 @@
+---
+file_format: definition/2
+metrics:
+# Optical SIGNAL metrics (hw.* has no concept of these). Module
+# environmental telemetry (temperature, voltage, status) is hw.* and is
+# intentionally NOT duplicated here. See docs/architecture.md (namespace
+# layering).
+- name: network.optical.power
+  stability: development
+  brief: >
+    Optical power transmitted or received on the channel.
+  note: |
+    Unit is `dB[mW]` (decibel-milliwatts, UCUM) — NOT the literal `dBm`.
+    `network.io.direction` distinguishes Tx from Rx. This is the primary
+    health signal of every optic (grey or coherent); on grey/direct-detect
+    optics it is often the only `network.optical.*` value reported (the
+    coherent metrics below are opt-in and simply absent).
+
+    Warn/alarm thresholds for module temperature/voltage are `hw.*`
+    (`hw.temperature.limit`, `hw.status`); optical-power thresholds and the
+    threshold-crossing event are deferred to a later threshold/event pass.
+  instrument: gauge
+  unit: "dB[mW]"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.bias_current
+  stability: development
+  brief: >
+    Laser bias current of the transmitting optic.
+  note: >
+    A laser operating-point value (SFF-8472 DOM). Kept in `network.optical.*` rather than `hw.current` because it is laser/optical-signal telemetry, not a generic component rail current.
+  instrument: gauge
+  unit: "A"
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.osnr
+  stability: development
+  brief: >
+    Optical signal-to-noise ratio of the (coherent) carrier.
+  note: >
+    Coherent endpoint metric (opt-in for grey optics, which do not report it). Unit `dB` (a ratio), not `dB[mW]`.
+  instrument: gauge
+  unit: "dB"
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.ber
+  stability: development
+  brief: >
+    Bit error ratio of the carrier, before or after FEC.
+  note: >
+    Dimensionless ratio (`1`). `network.optical.fec.stage` selects pre- vs post-FEC. Coherent endpoint metric (opt-in for grey optics).
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.optical.fec.stage
+    requirement_level: required
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.chromatic_dispersion
+  stability: development
+  brief: >
+    Chromatic dispersion measured/compensated by the coherent receiver.
+  instrument: gauge
+  unit: "ps/nm"
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.pmd
+  stability: development
+  brief: >
+    Polarization mode dispersion measured by the coherent receiver.
+  instrument: gauge
+  unit: "ps"
+  entity_associations:
+  - network.optical.channel

@@ -1,0 +1,41 @@
+---
+file_format: definition/2
+
+# network-sr metrics — the local SID-table count.
+#
+# SRGB/SRLB OCCUPANCY is NOT here: it reuses `network.component.utilization`
+# with `network.component.resource` ∈ srgb/srlb/mpls_label (the table-fill
+# family). This file carries only the count that has no
+# other home — the device's local SID (My-SID) table.
+
+metrics:
+- name: network.sr.sids
+  stability: development
+  brief: >
+    Number of SIDs in the device's local SID table, by SRv6 function and address family.
+  note: |
+    The local (My-SID) table is a COUNT, never per-SID entities — the
+    `network.routing.routes` pattern one plane over: locally
+    instantiated SIDs are bounded-but-large and remote SIDs are simply
+    routes. Prefix/node/adjacency SIDs (SR-MPLS) that the device advertises
+    are low-card and carried as attributes (`network.sr.prefix_sid` /
+    `network.sr.adjacency_sid`), not counted here. See docs/conventions.md
+    (cardinality firewall).
+
+    Dimensions:
+    - `network.srv6.sid.function` — END / END.X / END.DT4 / … (SRv6); absent
+      / a custom value for SR-MPLS local labels.
+    - `network.address_family` — the AFI/SAFI the SID serves (e.g.
+      `vpnv4_unicast` for an END.DT4).
+
+    Associates with `network.instance` (the SID table is per VRF/locator
+    context); the owning `network.device` is expected in the same Resource.
+  instrument: updowncounter
+  unit: "{sid}"
+  attributes:
+  - ref: network.srv6.sid.function
+    requirement_level: recommended
+  - ref: network.address_family
+    requirement_level: recommended
+  entity_associations:
+  - network.instance

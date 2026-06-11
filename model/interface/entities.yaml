@@ -1,0 +1,95 @@
+---
+file_format: definition/2
+entities:
+- type: network.interface
+  stability: development
+  brief: >
+    A network interface on a device: physical port, logical subinterface, LAG bundle interface, SVI/IRB, tunnel endpoint, or loopback.
+  note: |
+    The most-instrumented entity in the network domain. All traffic
+    counters (io, packets, errors, discards) attach here.
+
+    Identity is scoped by the owning device — the full identity is
+    (`network.device.id`, `network.interface.id`). The owning
+    `network.device` entity MUST be present in the same Resource.
+
+    An interface of `type=lag` is the forwarding/counter view of a LAG
+    bundle. The bundle membership/health/LACP view lives on
+    `network.lag`, related by id.
+  identity:
+  - ref: network.interface.id
+  description:
+  - ref: network.interface.description
+    requirement_level: recommended
+  - ref: network.interface.type
+    requirement_level: recommended
+  - ref: network.interface.role
+    requirement_level: recommended
+  - ref: network.interface.admin_state
+    requirement_level: recommended
+  - ref: network.interface.oper_state
+    requirement_level: recommended
+  - ref: network.interface.speed
+    requirement_level: recommended
+  - ref: network.interface.duplex
+    requirement_level: opt_in
+  - ref: network.interface.mtu
+    requirement_level: recommended
+  - ref: network.interface.mac.address
+    requirement_level: opt_in
+  # Relationships
+  - ref: network.interface.parent.id
+    requirement_level: opt_in
+  - ref: network.interface.lower_layer.id
+    requirement_level: opt_in
+  # VLAN membership
+  - ref: network.interface.vlan.mode
+    requirement_level: opt_in
+  - ref: network.interface.vlan.native
+    requirement_level: opt_in
+  - ref: network.interface.vlan.tagged
+    requirement_level: opt_in
+  - ref: network.interface.vlan.outer
+    requirement_level: opt_in
+  # Routed sub-interface encapsulation VLAN — distinct from the
+  # switchport vlan.* membership above; the tag(s) a routed (sub)interface
+  # terminates.
+  - ref: network.interface.encapsulation.outer_vlan
+    requirement_level: opt_in
+  - ref: network.interface.encapsulation.inner_vlan
+    requirement_level: opt_in
+  # Subscriber-endpoint single session — on a PPPoE/IPoE
+  # terminating interface (a dialer/WAN on a CPE/CE). The bounded
+  # single-session detail deferred for the subscriber side, distinct
+  # from the BNG aggregate. Reuse access.session.type/state here.
+  - ref: network.access.session.type
+    requirement_level: opt_in
+  - ref: network.access.session.state
+    requirement_level: opt_in
+  - ref: network.access.session.id
+    requirement_level: opt_in
+  - ref: network.access.session.ac_name
+    requirement_level: opt_in
+  - ref: network.access.session.service_name
+    requirement_level: opt_in
+  - ref: network.access.session.mru
+    requirement_level: opt_in
+  # Segment Routing SIDs on a loopback
+  - ref: network.sr.prefix_sid
+    requirement_level: opt_in
+  - ref: network.srv6.locator
+    requirement_level: opt_in
+  # Power over Ethernet — categorical negotiation facets. Physical
+  # power draw/voltage/current/status stay on hw.*; the watt
+  # values (allocated/requested) are gauge metrics (interface/metrics.yaml).
+  # These five are the duplex/autoneg-sibling state/config facets.
+  - ref: network.interface.poe.role
+    requirement_level: opt_in
+  - ref: network.interface.poe.standard
+    requirement_level: opt_in
+  - ref: network.interface.poe.class
+    requirement_level: opt_in
+  - ref: network.interface.poe.priority
+    requirement_level: opt_in
+  - ref: network.interface.poe.state
+    requirement_level: opt_in

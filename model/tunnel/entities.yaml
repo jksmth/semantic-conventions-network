@@ -1,0 +1,65 @@
+---
+file_format: definition/2
+entities:
+- type: network.tunnel
+  stability: development
+  brief: >
+    An overlay tunnel SOURCE ENDPOINT anchored on one device: the local origin of a single configured point-to-point tunnel (GRE/IPsec) or of a dynamically-discovered tunnel mesh (a VXLAN VTEP, an SD-WAN TLOC).
+  note: |
+    The overlay-tier source-endpoint primitive (VXLAN VTEP, SD-WAN TLOC),
+    resolved as the overlay twin of the 1:N shared-medium fix.
+
+    Identity is scoped by the owning device — the full identity is
+    (`network.device.id`, `network.tunnel.id`), and the owning
+    `network.device` MUST be present in the same Resource. The
+    endpoint is the local anchor this device fully owns and emits; it is the
+    overlay analogue of the head-end of a `point_to_multipoint`
+    `network.link`.
+
+    The discovered peer set is NOT modelled as entities. A VTEP/TLOC
+    terminates a full mesh learned via EVPN Type-3 / OMP; per-peer and
+    per-transport-class telemetry (per remote VTEP, per TLOC-pair, per VNI)
+    is carried as metric DIMENSIONS / records, never as N tunnel entities
+    (the cardinality firewall). For a single configured
+    point-to-point tunnel the one remote is `network.tunnel.peer.address`.
+
+    Distinct from `network.path`: a tunnel is a device-scoped local source;
+    a `network.path` is a cross-device ingress→transit→egress traversal
+    (MPLS LSP, SR policy, optical lightpath) identified independently of any
+    one device.
+
+    Deferred (NOT blockers for this entity):
+    - Per-peer/per-VNI/per-color counters, BFD liveness, and the tunnel/BFD
+      up-down + path-change/SLA-violation events attach with the
+      metrics/events packages (as for `network.link`).
+    - Rich relationship typing (a first-class is-source-of / is-peer-of
+      association vs the id-reference + metric-dimension convention) awaits
+      the OTel edge/relationship model, the same limitation worked
+      around for `network.link`.
+    - The underlay↔overlay binding: the id-reference half — which
+      underlay context the endpoint rides — is now
+      `network.tunnel.underlay.instance`. Aggregate underlay ECMP
+      fan-out is now `network.routing.ecmp.routes` (by width); the
+      per-remote-VTEP attribution and load-balance, and the typed
+      overlay-rides-underlay relationship, remain deferred.
+  identity:
+  - ref: network.tunnel.id
+  description:
+  - ref: network.tunnel.type
+    requirement_level: recommended
+  - ref: network.tunnel.source.address
+    requirement_level: recommended
+  - ref: network.tunnel.transport_class
+    requirement_level:
+      conditionally_required: when the endpoint is keyed by a transport class / color (SD-WAN TLOC)
+  - ref: network.tunnel.vni
+    requirement_level: opt_in
+  - ref: network.tunnel.underlay.instance
+    requirement_level: opt_in
+  - ref: network.tunnel.peer.address
+    requirement_level:
+      conditionally_required: when the endpoint terminates a single configured point-to-point peer
+  - ref: network.tunnel.state
+    requirement_level: recommended
+  - ref: network.tunnel.native_state
+    requirement_level: opt_in

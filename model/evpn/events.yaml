@@ -1,0 +1,92 @@
+---
+file_format: definition/2
+
+# network-evpn events. The EVPN control-plane events named in the registry header
+# (model/evpn/registry.yaml "EVPN events (MAC mobility / VM move, DF change,
+# ES up/down)"; "the DF-change event defers to the event package").
+#
+# Authored here: the DF re-election event. EVPN mints NO entity (it rides on
+# `network.instance` + `network.neighbor protocol=bgp` af=l2vpn_evpn), so the
+# refinement associates `network.instance` (the EVI) and carries the shared
+# `network.evpn.esi`.
+#
+#   - network.evpn.df.changed — the Designated Forwarder for an (ES, EVI) was
+#     re-elected. The DF is an ELECTED ROLE, so its change is a
+#     `network.state.changed` over `network.evpn.df_role` (df↔non_df); the
+#     leaf that LOST DF additionally carries cause=`redundancy_lost`.
+#
+# DEFERRED (third category — designed with the attachment-point-move /
+# MAC-move family): EVPN MAC mobility / VM move is an observation RECORD (it
+# names a MAC + its old/new Ethernet Segment + the RFC 7432 sequence number),
+# not a state/alarm event — the sibling of `network.l2.mac.moved`. ES up/down on
+# a member port is an ordinary `network.interface.state.changed`.
+event_refinements:
+- id: network.evpn.df.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    The Designated Forwarder was re-elected for an Ethernet Segment / EVI — a leaf changed between `df` and `non_df` (RFC 7432 / RFC 8584). The point-in-time transition of the `network.evpn.df_role` enum-as-attribute gauge; on a multi-homed segment a DF flap can blackhole or duplicate BUM traffic, so it is an alerted-on fabric event.
+  note: |
+    `network.event.state.dimension=operational`. Native endpoints in
+    `network.event.state.previous`/`current` carry the `network.evpn.df_role`
+    value transitioned from/to ("df"→"non_df" or the reverse). The election is
+    per (ES, VLAN/EVI), so the affected `network.evpn.esi` is carried and the
+    `network.instance` (EVI) is associated; a leaf may be DF for some VLANs and
+    non_df for others.
+
+    A leaf that LOST the DF role SHOULD carry
+    `network.alarm.cause=redundancy_lost` (opt-in) — the forwarding
+    responsibility for that segment moved to a peer.
+  entity_associations:
+  - network.instance
+  attributes:
+  - ref: network.evpn.esi
+    requirement_level: required
+    note: The Ethernet Segment whose DF election changed.
+  - ref: network.event.state.current
+    requirement_level: required
+    note: The new `network.evpn.df_role` (e.g. "non_df").
+  - ref: network.event.state.previous
+    requirement_level: recommended
+    note: The prior `network.evpn.df_role` (e.g. "df").
+
+- id: network.evpn.mac.moved
+  ref: network.attachment.moved
+  stability: development
+  brief: >
+    A MAC (or MAC/IP) moved between Ethernet Segments / VTEPs in the fabric — EVPN MAC mobility / VM move (RFC 7432 §7.7). The literal anchor case of the move family: a record naming the MAC + its old/new ESI, inheriting the RFC 7432 mobility sequence and duplicate-flap fields from the base.
+  note: |
+    The fabric-scoped member of the move family — NOT a
+    `network.state.changed` (a MAC is a count, not an entity).
+    Carries the moved `network.l2.mac.address` (reused cross-domain), the segment
+    it moved FROM as `network.evpn.previous_esi` and the segment it moved TO as
+    the reused `network.evpn.esi` (with `network.evpn.route_type=mac_ip`), and
+    inherits `network.attachment.sequence` (the literal MAC Mobility
+    extended-community sequence number) and `network.attachment.duplicate` (RFC
+    7432 §15 — `true` ⇒ a duplicate/flapping MAC, a moving-loop or misconfig, not
+    a clean VM move). Associates the EVI `network.instance`.
+
+    This is the record the registry header named "MAC mobility / VM move"; a
+    rapidly-incrementing sequence or `duplicate=true` is the fabric's
+    duplicate-MAC alarm input.
+  entity_associations:
+  - network.instance
+  attributes:
+  - ref: network.l2.mac.address
+    requirement_level: required
+    note: The moved MAC address.
+  - ref: network.evpn.previous_esi
+    requirement_level: required
+    note: The Ethernet Segment the MAC moved FROM (the previous locator).
+  - ref: network.evpn.esi
+    requirement_level: required
+    note: The Ethernet Segment the MAC moved TO (the current locator).
+  - ref: network.evpn.route_type
+    requirement_level: recommended
+    note: Normally `mac_ip` (a Type-2 MAC/IP advertisement).
+  - ref: network.attachment.sequence
+    requirement_level: recommended
+    note: The RFC 7432 MAC Mobility sequence number.
+  - ref: network.attachment.duplicate
+    requirement_level: recommended
+    note: RFC 7432 §15 duplicate-MAC detection — `true` ⇒ flapping, not a clean move.

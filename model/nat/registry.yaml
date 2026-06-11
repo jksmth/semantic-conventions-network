@@ -1,0 +1,213 @@
+---
+file_format: definition/2
+
+# network-nat — NAT / PAT as a CONTROL-PLANE state, not just a data-plane
+# flow facet.
+#
+# "NAT" reads as one firewall feature, but the control-plane ≠ data-plane split
+# the conventions apply everywhere (the MPLS label-on-a-flow vs the LFIB; the
+# QoS marking vs the scheduler) sorts it into two halves, and the split is the
+# whole design:
+#
+#   - DATA PLANE — "this connection's 10.0.0.5:51000 went out as
+#     203.0.113.7:40012." A per-flow OBSERVATION, so a flow RECORD, never a
+#     metric. It is almost entirely a REUSE: the post-translation tuple is the
+#     ECS-aligned `source.nat.ip`/`source.nat.port` /
+#     `destination.nat.ip`/`destination.nat.port` carried on the flow record,
+#     plus exactly one discriminator authored here — `network.nat.type`. The
+#     flow record itself is deferred with the rest of the observation-record
+#     category, so this package mints only the discriminator and documents the
+#     ECS reuse (it does NOT fork the tuple into `network.nat.*` names).
+#
+#   - CONTROL PLANE — the live translation table, the finite public
+#     address+port resource, and (for carriers) the per-subscriber port-block.
+#     This is device STATE, and it is the part that is missing and dangerous.
+#     It is NOT firewall-specific: a home CPE doing NAT44, a carrier CG-NAT, and
+#     an enterprise firewall are the same three objects (xlate table / pool /
+#     port-block) at three scales — one vocabulary, many devices.
+#
+# The NAT pool is the SECOND member of the address-resource-pool family the BNG
+# opened (`network.access.pool`): same utilisation-metric-+-exhausted-event
+# shape, different consumption unit. A DHCP pool is consumed one LEASE per
+# subscriber, so address-utilisation is the signal; a NAT/PAT pool is consumed
+# one PORT per concurrent flow, so a pool of 1000 addresses × ~64k ports
+# exhausts on PORTS while address-utilisation still reads "low" — which is why
+# `network.nat.port.utilization` (not address utilisation) is the CG-NAT alert,
+# and why CG-NAT exhaustion is a SILENT, per-subscriber onboarding outage.
+#
+# Cardinality (docs/conventions.md, the cardinality firewall): active
+# translations number in the millions — they are NEVER entities and NEVER a
+# per-translation metric series. The xlate table is an aggregate occupancy
+# GAUGE (`network.nat.translations`), the pool/port-block occupancy are bounded
+# per-pool gauges, and the legally-required CG-NAT log (RFC 6888 §2.3/§12, "who
+# held which public ip:port at time T") is a port-block allocation RECORD
+# (the third category, the exact twin of the per-subscriber usage record),
+# never a per-translation firehose. RFC 7422 deterministic/bulk port-block
+# allocation reduces — or eliminates — that log.
+#
+# OUT OF SCOPE (deferred, by design):
+#   - the NAT-RULE CONFIG object (a DNAT port-forward / VIP rule, a static-NAT
+#     mapping as configuration) → folds into the firewall policy/rulebase
+#     config plane, with the QoS classifier/scheduler config;
+#   - ALG / pinhole-created NAT (SIP-ALG RTP pinholes) — an inspection artifact;
+#   - NAT64 / DNS64 / MAP-T / 464XLAT IPv6-transition detail (the
+#     `address_family` attribute leaves room: NAT64 is the inside-ipv6 /
+#     pool-ipv4 case) — its own exercise;
+#   - PCP (RFC 6887) port-mapping control — a `network.neighbor`-shaped session
+#     if ever modelled.
+#
+# Prior art: RFC 2663 (NAT terminology), RFC 3022 (traditional NAT / NAPT),
+# RFC 4787 / 5382 (NAT behavioural reqs), RFC 6598 (100.64.0.0/10 shared CGN
+# space), RFC 6888 (CGN requirements + logging), RFC 7422 (deterministic CGN /
+# port-block allocation), RFC 8158 (IPFIX NAT-event export), and the
+# ECS `source.nat.*` / `destination.nat.*` field set (reused, not reinvented).
+
+attributes:
+# === Data-plane discriminator (also a control-plane metric dimension) =====
+# The one new noun on the data-plane side. A NAT'd flow is still a flow record;
+# NAT adds the post-translation tuple (reused ECS `source.nat.*` /
+# `destination.nat.*`) and this TYPE. The same noun dimensions the
+# control-plane `network.nat.translations` gauge — one attribute, two homes
+# (like `network.qos.class`, a marking facet and a metric dimension).
+- key: network.nat.type
+  type:
+    members:
+    - id: source
+      value: "source"
+      brief: >
+        Source NAT — SNAT / PAT / masquerade / overload. Inside→outside address (and usually port) translation; the home-CPE NAT44 and CG-NAT default.
+      stability: development
+    - id: destination
+      value: "destination"
+      brief: >
+        Destination NAT — DNAT. Port-forward / VIP / inbound publishing (outside→inside).
+      stability: development
+    - id: static
+      value: "static"
+      brief: >
+        Static 1:1 bidirectional translation (static-nat / twice-nat 1:1).
+      stability: development
+    - id: cgnat
+      value: "cgnat"
+      brief: >
+        Carrier-grade source NAT with PORT-BLOCK allocation — a `source` translation whose outside `ip:port` came from a shared carrier pool (RFC 6888). A deployment qualifier, not a fifth mechanism.
+      stability: development
+  stability: development
+  brief: >
+    The kind of address translation a flow underwent (a flow-record discriminator) or that a translation-table occupancy is bucketed by (a metric dimension).
+  note: >
+    Open enum, lowercase, custom values MAY be used. On a flow RECORD this discriminates the post-translation tuple carried in the ECS-aligned `source.nat.ip`/`source.nat.port` and `destination.nat.ip`/`destination.nat.port` (reused, not redefined here). On `network.nat.translations` it is the low-cardinality dimension the active-translation count is bucketed by. `cgnat` marks the shared-pool, port-block-allocated source-NAT case (§ this package's pool/port-block objects); it is `source` plus a deployment property, not a distinct mechanism.
+
+# === NAT pool (the address-resource-pool family's second member) ==========
+# The finite, durable, NF-owned public-address (and port) resource a NAT/PAT
+# device translates into. Bounded with telemetry over time → an ENTITY, the
+# exact sibling of `network.access.pool`. Identity is scoped by device.
+- key: network.nat.pool.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of a NAT pool, unique within the device.
+  note: >
+    Full identity is the pair (`network.device.id`, `network.nat.pool.id`); the owning `network.device` is expected in the same Resource. See docs/entity-model.md (sub-entity identity). The address-resource-pool sibling of `network.access.pool.id`.
+  examples: ["CGN-POOL-1", "outside-pool", "dmz-vip-pool"]
+
+- key: network.nat.pool.type
+  type:
+    members:
+    - id: dynamic
+      value: "dynamic"
+      brief: >
+        On-demand allocation — addresses/ports are assigned per flow/subscriber as needed. The default PAT/overload pool.
+      stability: development
+    - id: deterministic
+      value: "deterministic"
+      brief: >
+        Deterministic / bulk port-block allocation (RFC 7422) — the inside→outside `ip:port-block` mapping is algorithmic, so the per-allocation log is reduced or ELIMINATED (the zero-log CG-NAT case).
+      stability: development
+    - id: static
+      value: "static"
+      brief: >
+        Fixed 1:1 mappings (a static-NAT / VIP pool).
+      stability: development
+  stability: development
+  brief: >
+    The allocation discipline of the pool — how addresses/ports are handed out.
+  note: >
+    Open enum, lowercase. Orthogonal to `network.nat.type` (which says what a translation IS, not how the pool allocates). `deterministic` is the CG-NAT case where the binding is computable, so RFC 6888 logging needs only the algorithm parameters, not a per-allocation record.
+
+- key: network.nat.pool.address_family
+  type:
+    members:
+    - id: ipv4
+      value: "ipv4"
+      brief: An IPv4 public-address pool.
+      stability: development
+    - id: ipv6
+      value: "ipv6"
+      brief: An IPv6 pool.
+      stability: development
+  stability: development
+  brief: >
+    The address family of the pool's (outside) addresses.
+  note: >
+    Open enum, lowercase. CG-NAT pools are `ipv4` (the scarce resource). NAT64 is the case where the inside is IPv6 and the pool is `ipv4`; the IPv6-transition mechanisms themselves are out of scope here.
+
+- key: network.nat.pool.state
+  type:
+    members:
+    - id: used
+      value: "used"
+      brief: Addresses/ports currently allocated from the pool.
+      stability: development
+    - id: free
+      value: "free"
+      brief: Addresses/ports available for allocation.
+      stability: development
+  stability: development
+  brief: >
+    Allocation state, used to bucket the pool's address and port counts (used + free = size).
+  note: >
+    The same used/free occupancy split as `network.access.pool.state`, reused here for BOTH the address count (`network.nat.pool.addresses`) and the port count (`network.nat.ports`).
+
+# === CG-NAT port-block (the per-subscriber unit of exhaustion AND logging) =
+# A subscriber gets a contiguous BLOCK of L4 ports on a shared public address.
+# It is the unit that exhausts per-subscriber (invisible to the pool gauge) and
+# the unit the carrier must log (RFC 6888/7422). These fields describe one
+# block on the allocation RECORD and the per-subscriber exhaustion event.
+- key: network.nat.port_block.state
+  type:
+    members:
+    - id: allocated
+      value: "allocated"
+      brief: Port-blocks currently assigned to a subscriber.
+      stability: development
+    - id: free
+      value: "free"
+      brief: Port-blocks available for assignment.
+      stability: development
+  stability: development
+  brief: >
+    Allocation state, used to bucket the aggregate port-block count per pool (allocated + free = total blocks).
+
+- key: network.nat.port_block.address
+  type: string
+  stability: development
+  brief: >
+    The shared public (outside) address the allocated port-block is carved from.
+  note: >
+    On the data-plane flow facet this same value is the ECS `source.nat.ip`; carried here so the CG-NAT binding record joins to flow records. Ten thousand subscribers may share this address, disambiguated only by the port-block range (`network.nat.port_block.start`/`.end`).
+  examples: ["203.0.113.7", "198.51.100.42"]
+
+- key: network.nat.port_block.start
+  type: int
+  stability: development
+  brief: >
+    The first L4 port of the allocated block (inclusive).
+  examples: [40000, 1024]
+
+- key: network.nat.port_block.end
+  type: int
+  stability: development
+  brief: >
+    The last L4 port of the allocated block (inclusive).
+  examples: [40063, 2047]
