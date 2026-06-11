@@ -29,8 +29,12 @@ box?" For the model itself, see [`../docs/`](../docs/).
 | [dc-fabric](dc-fabric/) | EVPN-VXLAN fabric leaf | The many-to-many fabric by reference: the VXLAN VTEP as a source (not N tunnels), BGP-EVPN route types and the Type-2 L2/L3 fusion, anycast gateway + MLAG shared identity, the ESI-LAG bond across two leaves, and BUM/multicast replication. |
 | [wifi-ap](wifi-ap/) | Controller-managed WiFi AP | The RF layer + producer ≠ subject: radios and airtime/noise/tx-power telemetry, the BSS and its point-to-multipoint RF cell, the transient MAC-randomised station as count + record, the AP-join state machine, and the WLC-as-`network.observer` over CAPWAP. |
 | [wifi-cpe](wifi-cpe/) | All-in-one wireless gateway | The composite/delta over CPE ∪ WiFi-AP: self-reported RF (observer absent), the device-as-station Wi-Fi-WAN uplink (`radio.mode=sta` + self-measured RSSI/SNR), wireless backhaul + mesh via `network.link` + `network.path`, the integrated-modem self-report, and TR-069/USP management. |
+| [sd-wan-edge](sd-wan-edge/) | Virtual SD-WAN edge (cloud VNF) | The device that *is* a host, purest form: a cloud-VM SD-WAN edge with `host.*`/`cloud.*` related by shared identity (system-ip as the stable id), service VPNs as `network.instance`, the TLOC IPsec mesh as a `network.tunnel` source endpoint (color = `transport_class`), IPsec/IKE SAs as sessions, OMP + the controllers (the proprietary-protocol path), and vManage as a producer-≠-subject observer. |
+| [ucpe](ucpe/) | Whitebox uCPE (NFVI host + VNFs) | The `system.*` / `hw.*` / `network.*` boundary: one physical Linux box (a `host`, not a device) running many VNFs (each a `network.device`), virtual NICs (`type=virtual`), inter-VNF wiring as `network.link`, the service function chain as a `network.path` (`type=service_chain`), and why the 1:N host↔VNF hosting relationship is infrastructure metadata, not `network.*`. |
 
-More device walkthroughs (firewall) follow the same template.
+More device walkthroughs (firewall) follow the same template. The two virtual examples
+(`sd-wan-edge`, `ucpe`) are a matched pair on the host↔device relationship — **1:1**
+(the VM *is* the device) versus **1:N** (one box *hosts* many devices).
 
 ## How to read a mapping table
 
