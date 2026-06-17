@@ -1,0 +1,37 @@
+---
+file_format: definition/2
+entities:
+- type: network.vlan
+  stability: development
+  brief: >
+    An 802.1Q VLAN (broadcast domain) configured on a device.
+  note: |
+    `network.vlan` is the L2 broadcast domain — the 802.1Q tag/segment.
+    It is a first-class L2 telemetry anchor: in flat 802.1Q
+    switching the VLAN is the forwarding context and L2 metrics (e.g. MAC
+    table occupancy) associate with it directly.
+
+    Distinct from `network.instance`:
+    - `network.vlan` = the 802.1Q broadcast domain (a tag/segment).
+    - `network.instance` = a forwarding/routing context (VRF, bridge-domain).
+    For simple enterprise switching the VLAN effectively IS the bridge
+    domain and no explicit `l2vsi` instance is needed. A `network.instance`
+    of type `l2vsi`/`l2l3` is used only when a distinct bridging context
+    exists (VPLS, EVPN MAC-VRF, multi-VLAN or cross-site bridge domains).
+    See docs/entity-model.md (network.instance vs network.vlan).
+
+    Identity is scoped by device — (`network.device.id`, `network.vlan.id`).
+  identity:
+  - ref: network.vlan.id
+  description:
+  - ref: network.vlan.name
+    requirement_level: recommended
+  # QinQ / provider-bridging tag classification
+  - ref: network.vlan.tag.role
+    requirement_level: opt_in
+  - ref: network.vlan.tag.ethertype
+    requirement_level: opt_in
+  # Per-VLAN MAC limit — the per-VLAN twin of
+  # network.instance.fdb.limit; ceiling for network.l2.fdb.entry.count.
+  - ref: network.vlan.fdb.limit
+    requirement_level: opt_in

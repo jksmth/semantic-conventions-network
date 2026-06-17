@@ -1,0 +1,159 @@
+---
+file_format: definition/2
+metrics:
+- name: network.neighbor.state_changes
+  stability: development
+  brief: >
+    Number of times the neighbour/session has changed state.
+  note: |
+    The transition counter for an adjacency/session (e.g. BGP session
+    resets, OSPF adjacency drops, BFD bounces). A rising rate is the
+    primary instability signal for the control plane.
+
+    Complements the current-state view carried by the
+    `network.neighbor.state` / `network.neighbor.native_state`
+    descriptive attributes: the count survives a collector restart,
+    where a stream of transition events would not.
+  instrument: counter
+  unit: "{change}"
+  entity_associations:
+  - network.neighbor
+
+- name: network.protocol.messages
+  stability: development
+  brief: >
+    Number of control-plane protocol messages exchanged with the neighbour.
+  note: |
+    Keyed by `network.neighbor.protocol` (the control-plane protocol
+    key — NOT the upstream L7 `network.protocol.name`; see
+    docs/conventions.md, naming rules), the direction, and an optional
+    message type. Covers BGP UPDATE/KEEPALIVE, OSPF hellos/LSAs, IS-IS
+    PDUs, LDP messages, etc.
+  instrument: counter
+  unit: "{message}"
+  attributes:
+  - ref: network.neighbor.protocol
+    requirement_level: required
+  - ref: network.io.direction
+    requirement_level: required
+  - ref: network.protocol.message.type
+    requirement_level: opt_in
+  entity_associations:
+  - network.neighbor
+
+- name: network.protocol.errors
+  stability: development
+  brief: >
+    Number of control-plane protocol errors involving the neighbour.
+  note: >
+    Protocol-level errors (e.g. BGP notifications sent/received, OSPF authentication failures, malformed PDUs). `error.type` (upstream) provides optional classification — e.g. EIGRP Stuck-In-Active is `error.type=stuck_in_active`; LACP receive-side parse failures on the slow-protocols address are `error.type=unknown` (`dot3adAggPortStatsUnknownRx`) and `error.type=illegal` (`dot3adAggPortStatsIllegalRx`). Single-direction by nature for LACP (receive-only), so no `network.io.direction`.
+  instrument: counter
+  unit: "{error}"
+  attributes:
+  - ref: network.neighbor.protocol
+    requirement_level: required
+  - ref: error.type
+    requirement_level: opt_in
+  entity_associations:
+  - network.neighbor
+
+# --- EIGRP refinement --------------------------------------------------
+# EIGRP is IETF RFC 7868 (a second implementation exists in FRRouting), so it
+# is a STANDARD protocol gated by the existing `network.neighbor.protocol=eigrp`
+# discriminator — NOT a `cisco.*` vendor namespace. Most of EIGRP maps to core
+# (PDU types -> network.protocol.message.type; SIA -> network.protocol.errors
+# error.type=stuck_in_active; adjacency up/down -> network.neighbor.state /
+# state_changes). Only the per-peer reliable-transport state below has no
+# vendor-neutral neighbour equivalent, so it refines the core signal under the
+# protocol-qualified `network.neighbor.eigrp.*` namespace (OTel "signal-specific
+# attributes": a name unlikely to be used beyond this convention is scoped to
+# its signal). Per-peer => bounded cardinality; the per-PREFIX DUAL topology
+# table (feasible/reported distance, composite-metric K-values) is deliberately
+# NOT modelled here — it is per-prefix and belongs on route records, not the
+# per-instance `network.routing.route.count` count.
+
+- name: network.neighbor.eigrp.srtt
+  stability: development
+  brief: >
+    EIGRP smoothed round-trip time (SRTT) to the neighbour, in milliseconds.
+  note: >
+    `cEigrpPeerSRTT` of the CISCO-EIGRP-MIB — the `SRTT` column of `show ip eigrp neighbors`. Emitted only for a `network.neighbor` with `protocol=eigrp`; the owning neighbour entity already carries the protocol (identifying), so it is not duplicated as a dimension here.
+  instrument: gauge
+  unit: "ms"
+  entity_associations:
+  - network.neighbor
+
+- name: network.neighbor.eigrp.rto
+  stability: development
+  brief: >
+    EIGRP retransmission timeout (RTO) for the neighbour, in milliseconds.
+  note: >
+    `cEigrpPeerRTO` of the CISCO-EIGRP-MIB — the `RTO` column of `show ip eigrp neighbors`: how long EIGRP waits before retransmitting a reliable packet to this peer. Emitted only for a `network.neighbor` with `protocol=eigrp`.
+  instrument: gauge
+  unit: "ms"
+  entity_associations:
+  - network.neighbor
+
+- name: network.neighbor.eigrp.queue.depth
+  stability: development
+  brief: >
+    EIGRP reliable-transport packets currently queued for the neighbour.
+  note: >
+    `cEigrpPeerPktsEnqueued` of the CISCO-EIGRP-MIB — the `Q Cnt` column of `show ip eigrp neighbors`. A sustained non-zero queue is the classic Stuck-In-Active precursor: the peer is not acknowledging reliable packets, so DUAL cannot converge. Emitted only for a `network.neighbor` with `protocol=eigrp`.
+  instrument: gauge
+  unit: "{packet}"
+  entity_associations:
+  - network.neighbor
+
+# --- LACP refinement ---------------------------------------------------
+# LACP is wholly IEEE 802.1AX, so it is a STANDARD protocol gated by the existing
+# `network.neighbor.protocol=lacp` discriminator — NOT a vendor namespace. Most of
+# LACP maps to core: the PDU counters -> network.protocol.messages
+# (network.protocol.message.type=lacpdu/marker/marker_response + network.io.direction);
+# the unknown/illegal receive errors -> network.protocol.errors
+# (error.type=unknown/illegal); the coarse partner up/down -> network.neighbor.state
+# (Collecting_Distributing->up, Detached->down); clean transitions ->
+# network.neighbor.state_changes. Only the two facets below have no vendor-neutral
+# neighbour equivalent, so they refine the core signal under the protocol-qualified
+# `network.neighbor.lacp.*` namespace (the network.neighbor.eigrp.* precedent).
+#
+# Scope (the inverse of LLDP): LACP counters ARE neighbour-scoped — each
+# is measured per member port against exactly one partner, already a
+# `network.neighbor` `protocol=lacp` — so they fit the generic counters rather than
+# minting a top-level network.lacp.* namespace.
+#
+# Prior art: IEEE 802.1AX; `ieee802-dot1ax` (`aggregation-port-lacp`:
+# actor-oper-state/partner-oper-state, the debug churn group) — the live collector's
+# NETCONF source; IEEE8023-LAG-MIB (dot3adAggPortActorOperState/PartnerOperState,
+# dot3adAggPortDebug{Actor,Partner}ChurnCount); OpenConfig openconfig-lacp
+# (/lacp/interfaces/interface/members/member/state).
+
+- name: network.neighbor.lacp.state
+  stability: development
+  brief: >
+    LACP actor/partner operational-state flags (per-flag StateSet — one series per set flag).
+  note: >
+    Decomposes the IEEE 802.1AX actor/partner operational-state octet (`ieee802-dot1ax` `actor-oper-state`/`partner-oper-state`; `dot3adAggPortActorOperState`/`PartnerOperState`) into individually queryable flags. The eight bits (`network.neighbor.lacp.state.flag`) are NOT mutually exclusive, so this is a StateSet, not an enum state machine: value 1 when the flag is set, 0 when cleared — making "show members where `collecting=false`" a label filter instead of TSDB bit-math against a packed integer. `network.neighbor.lacp.role` selects the actor or partner view. Emitted only for a `network.neighbor` with `protocol=lacp`; the owning neighbour carries the protocol (identifying), so it is not duplicated as a dimension. The coarse partner up/down stays on `network.neighbor.state`; these flags are the diagnostic layer beneath it.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.neighbor.lacp.role
+    requirement_level: required
+  - ref: network.neighbor.lacp.state.flag
+    requirement_level: required
+  entity_associations:
+  - network.neighbor
+
+- name: network.neighbor.lacp.churn
+  stability: development
+  brief: >
+    LACP churn detections — the standard signal for an aggregation member that cannot converge to a stable synchronized state.
+  note: >
+    Monotonically increasing counter of LACP churn-detection events: how often the actor (or partner) mux fails to settle into a stable synchronized state. `dot3adAggPortDebugActorChurnCount`/`PartnerChurnCount` of IEEE8023-LAG-MIB (the `ieee802-dot1ax` debug group); OpenConfig exposes the churn-machine state under `/lacp/.../members/member/state`. `network.neighbor.lacp.role` distinguishes actor from partner. Distinct from `network.neighbor.state_changes` (clean up/down transitions): a high churn count with a stable up/down state is the signature of a mux that cannot converge. Emitted only for a `network.neighbor` with `protocol=lacp`.
+  instrument: counter
+  unit: "{event}"
+  attributes:
+  - ref: network.neighbor.lacp.role
+    requirement_level: required
+  entity_associations:
+  - network.neighbor

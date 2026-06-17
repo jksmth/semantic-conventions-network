@@ -1,0 +1,112 @@
+---
+file_format: definition/2
+
+# network — source.* observed-endpoint additions (proposed-upstream).
+#
+# The base source.* group (source.address, source.port) is UPSTREAM
+# (development) and pulled in via the manifest dependency, ref'd directly — NOT
+# redefined here. This package ADDS the observed-endpoint descriptors network
+# telemetry needs that upstream has not yet defined:
+#   source.hostname / source.address.prefix / source.as.number / source.as.name
+#   source.mac / source.zone / source.vlan.id / source.vlan.name
+#
+# WHY source.*/destination.* (not network.peer.*): the upstream `source.*` /
+# `destination.*` model is the SANCTIONED home for third-party-OBSERVED traffic
+# — explicitly "no client/server relationship ... packet tracing ...
+# unidirectional UDP flows" (semantic-conventions #1721). Every active-test
+# result, every flow record, and every traceroute hop is exactly that: an
+# observer describing two endpoints it is neither. The Stable `network.peer.*`
+# attribute is the far end of THIS process's own socket connection — a different
+# concept we MUST NOT overload (the same reasoning model/neighbor uses to avoid
+# network.peer.address). So observed AS/hostname/VLAN/MAC/zone hang off the
+# directional source/destination endpoint, mirroring ECS (source.as.*,
+# destination.as.*, source.mac, ...) and the in-flight upstream additions.
+#
+# PROPOSED-UPSTREAM (squatting risk): these names live in the source.* namespace
+# we do not own. source.as.* tracks semantic-conventions #3740 (Autonomous
+# System enrichment); source.zone / source.vlan.* / the reverse-DNS
+# source.hostname track the related observed-traffic proposals. If upstream
+# lands a different shape, realign.
+#
+# Flow-prep: authored with the network-test package so the
+# network.flow records reuse the IDENTICAL endpoint vocabulary — a test and
+# the flows it generates share source.*/destination.* and correlate. The
+# cardinality firewall (docs/conventions.md) still applies: these are
+# record/span fields, NOT metric dimensions (except where bounded).
+#
+# Enrichment principle (#3740): emit IDENTIFIERS, not pre-rendered labels — the
+# 32-bit AS number is canonical (source.as.number); source.as.name is the
+# display convenience.
+
+attributes:
+- key: source.hostname
+  type: string
+  stability: development
+  brief: >
+    The reverse-DNS / resolved hostname of the source address, when obtained by a lookup the address field itself does not carry.
+  note: >
+    Upstream `source.address` is "domain name if available WITHOUT reverse DNS lookup; otherwise IP". This attribute is the name obtained BY a reverse-DNS (or equivalent) lookup of `source.address` — the distinct, possibly-expensive enrichment, kept separate so a consumer can tell a configured name from a resolved one. Record/span-level; never a metric dimension. Aligns with the upstream reverse-DNS-name proposal.
+  examples: ["host-10-1-2-80.example.net"]
+
+- key: source.address.prefix
+  type: string
+  stability: development
+  brief: >
+    The CIDR prefix (RFC 4632) the source address falls within — the routing aggregate, used to collapse per-IP cardinality.
+  note: >
+    The covering prefix for `source.address`. The cardinality-reduction handle for grouping observed endpoints by IP range rather than individual address. Record/span-level.
+  examples: ["10.1.0.0/16", "2001:db8::/32"]
+
+- key: source.as.number
+  type: int
+  stability: development
+  brief: >
+    The Autonomous System number that originates/owns the source address.
+  note: >
+    The 32-bit ASN (4-byte ASNs as their integer value). The canonical machine identifier — emit this, not just a rendered label (#3740 enrichment principle); `source.as.name` is the display companion. Tracks semantic-conventions #3740; ECS `source.as.number`.
+  examples: [65001, 15169, 4200000000]
+
+- key: source.as.name
+  type: string
+  stability: development
+  brief: >
+    The human-readable name/organization of the Autonomous System that owns the source address.
+  note: >
+    The rendered AS name (WHOIS org). Companion to `source.as.number`; prefer the number for matching, this for display. Tracks #3740; ECS `source.as.organization.name`.
+  examples: ["EXAMPLE-AS", "GOOGLE"]
+
+- key: source.mac
+  type: string
+  stability: development
+  brief: >
+    MAC address of the source of a network exchange, as observed by a third party (no clear client/server relationship).
+  note: >
+    Represented in IEEE RA hexadecimal form: hyphen-separated octets, uppercase (e.g. 00-90-F5-E9-7B-36). Mirrors `host.mac` for the observed source/destination model. ECS `source.mac`.
+  examples: ["00-90-F5-E9-7B-36"]
+
+- key: source.zone
+  type: string
+  stability: development
+  brief: >
+    The network zone the traffic is categorized as coming from, as reported by an observer.
+  note: >
+    A coarse, operator-defined area label (security zone, locality). ECS `source.zone`. Open string.
+  examples: ["internal", "external", "dmz", "onnet", "offnet"]
+
+- key: source.vlan.id
+  type: int
+  stability: development
+  brief: >
+    The VLAN id (802.1Q tag) the source traffic was observed on, as reported by the observer.
+  note: >
+    The observed ingress VLAN of a flow/packet — distinct from the `network.vlan` ENTITY (a configured broadcast domain on a device). This is an observed-traffic record field. Replaces any single conflated vlan attribute; pairs with `source.vlan.name`.
+  examples: [10, 4094]
+
+- key: source.vlan.name
+  type: string
+  stability: development
+  brief: >
+    The VLAN name the source traffic was observed on, as reported by the observer.
+  note: >
+    The human-readable name companion to `source.vlan.id`.
+  examples: ["outside", "dmz", "corporate"]

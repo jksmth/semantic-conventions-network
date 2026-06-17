@@ -1,0 +1,58 @@
+# Side-by-side native pipeline:
+#   hostmetrics -> OTTL -> OTLP -> weaver registry live-check
+#
+# Reuses the running FRR lab (../labs/frr): the collector joins r1's network
+# namespace so hostmetrics observes r1's real interface counters. Boot the lab
+# first (run-native.sh does this), which creates the external `netlab` network.
+name: netlab-native
+
+services:
+  # Weaver as an OTLP listener. It loads the local `network.*` registry, assesses
+  # every received sample against it, and exits NON-ZERO if any `violation` is
+  # found — the gate's teeth, built in. No report.py.
+  weaver-livecheck:
+    image: ${WEAVER_IMAGE:-otel/weaver:latest}
+    container_name: netlab-weaver
+    working_dir: /work
+    volumes:
+      - ../..:/work:ro
+      - ./out:/out
+    networks: [netlab]
+    # entrypoint is `weaver`; we pass the subcommand + args.
+    # --inactivity-timeout 0 = never self-terminate; run-native.sh sends SIGHUP.
+    command:
+      - registry
+      - live-check
+      - -r
+      - model
+      - --input-source
+      - otlp
+      - --otlp-grpc-address
+      - 0.0.0.0
+      - --otlp-grpc-port
+      - "4317"
+      - --inactivity-timeout
+      - "0"
+      - --format
+      - json
+      - --output
+      - /out
+
+  # The OpenTelemetry Collector (contrib). Shares r1's netns so /proc/net/dev
+  # reflects r1's interfaces. config = otelcol-linux.yaml (collect + crosswalk).
+  otelcol:
+    image: ${OTELCOL_IMAGE:-otel/opentelemetry-collector-contrib:latest}
+    container_name: netlab-otelcol
+    network_mode: "container:netlab-r1"
+    depends_on: [weaver-livecheck]
+    environment:
+      DEVICE_ID: r1
+      # resolved via r1's netns (r1 is on the netlab network) -> weaver container
+      WEAVER_ENDPOINT: weaver-livecheck:4317
+    volumes:
+      - ./otelcol-linux.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+networks:
+  netlab:
+    name: netlab
+    external: true

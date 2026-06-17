@@ -47,3 +47,21 @@ attributes:
   note: >
     `cdpCacheVTPMgmtDomain` of the CISCO-CDP-MIB. Expected only on a `network.neighbor` with `protocol=cdp` reported by a device whose `network.device.vendor.name=cisco`. VTP is a Cisco-proprietary VLAN distribution protocol, so the management-domain string has no neutral home — unlike the rest of the CDP payload, which maps to the core `network.neighbor.*` / `network.link.*` attributes LLDP also fills.
   examples: ["eng-campus", "DC1"]
+
+# --- Entity refinement: re-open the vendor-neutral network.neighbor ----
+# The federation mechanism (semconv definition/2 `entity_refinements`): rather
+# than the core `network.neighbor` entity carrying a `cisco.*` ref (which would
+# make the vendor-neutral core fail to resolve without this package, violating
+# Principle 3), the vendor RE-OPENS the core entity here and attaches its lone
+# proprietary facet as an additional description attribute. In a federated
+# deployment this file ships as a separate registry depending on the core by
+# schema_url; the refinement composes onto `network.neighbor` at build time.
+#
+# Expected only on a `network.neighbor` with `protocol=cdp` reported by a device
+# whose `network.device.vendor.name=cisco`.
+entity_refinements:
+- id: cisco.network.neighbor
+  ref: network.neighbor
+  description:
+  - ref: cisco.cdp.vtp_domain
+    requirement_level: opt_in

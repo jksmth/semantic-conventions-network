@@ -1,0 +1,12 @@
+# Single SR Linux node — for the cross-vendor reconcile (keeps RAM low when run
+# alongside the Cisco lab). SNMP is enabled by default (community public).
+name: srl-solo
+mgmt:
+  network: srlmgmt
+  ipv4-subnet: 172.22.22.0/24
+topology:
+  nodes:
+    srl1:
+      kind: nokia_srlinux
+      image: ghcr.io/nokia/srlinux:latest
+      mgmt-ipv4: 172.22.22.11

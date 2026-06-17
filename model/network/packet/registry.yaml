@@ -1,0 +1,136 @@
+---
+file_format: definition/2
+
+# network-packet — properties of a packet, or of a class of packets.
+#
+# Describes a packet or a CLASS of packets aggregated by a shared property (a
+# dimension on a packet counter). Two leaves:
+#
+#   - `network.packet.type` — the unicast/multicast/broadcast cast class, a
+#     low-cardinality dimension on the interface packet counters
+#     (`network.interface.packets` / `.discards`).
+#   - `network.packet.drop.reason` — why an intentional discard happened, the
+#     classification dimension on `network.interface.discards` (the discards twin
+#     of how `error.type` classifies `network.interface.errors`).
+#
+# Discards vs errors: corrupt/unintended packets (CRC, frame, runt/giant, bad
+# checksum, malformed) are counted by `network.interface.errors` + `error.type`;
+# intentional drops of otherwise-intact packets by `network.interface.discards` +
+# `network.packet.drop.reason`. `checksum_error`/`malformed` are therefore NOT
+# `drop.reason` values.
+#
+# Out of scope: full payload capture (pcap). OTel does not carry captured packets.
+# A sampled packet is a `network.flow` observation (packets=1 + sampling rate),
+# not a distinct packet record.
+#
+# `network.packet.type` is reused verbatim from the OTel `ciscoosreceiver`
+# (collector-contrib), which ships it on `system.network.packet.count` with
+# values multicast/broadcast; `unicast` is added for the full IF-MIB
+# ifHC*{Ucast,Multicast,Broadcast}Pkts split. Keeping the name identical eases
+# convergence with that receiver.
+#
+# Prior art:
+#   - cast type: RFC 2863 IF-MIB (`ifHC{In,Out}{Ucast,Multicast,Broadcast}Pkts`);
+#     OpenConfig `{in,out}-{unicast,multicast,broadcast}-pkts`; OTel
+#     collector-contrib `ciscoosreceiver` `network.packet.type`.
+#   - drop reason: IPFIX `forwardingStatus` (RFC 7270, IE 89) drop sub-reason
+#     registry (unroutable / ACL deny / policer / WRED / bad-TTL / …); Linux
+#     `SKB_DROP_REASON_*` (`drop_monitor`); Cilium/Hubble drop reasons;
+#     ASIC / SONiC `DEBUG_COUNTER` drop-reason registers. SNMP IF-MIB
+#     `ifIn/OutDiscards` and OpenConfig `in/out-discards` expose only an
+#     unattributed discard scalar (no drop-reason taxonomy); this leaf follows the
+#     IPFIX/sFlow/eBPF lineage, not OpenConfig/TR-181 (docs/prior-art.md).
+
+attributes:
+- key: network.packet.type
+  type:
+    members:
+    - id: unicast
+      value: "unicast"
+      brief: Unicast — a single, specific destination.
+      stability: development
+    - id: multicast
+      value: "multicast"
+      brief: Multicast — a group destination.
+      stability: development
+    - id: broadcast
+      value: "broadcast"
+      brief: Broadcast — every destination in the broadcast domain.
+      stability: development
+  stability: development
+  brief: >
+    The L2/L3 cast type of a packet, or of the class of packets counted by a metric data point — unicast, multicast, or broadcast.
+  note: |
+    An open enum (custom values MAY be used), lowercase. The standard
+    unicast/multicast/broadcast distinction every interface counter exposes:
+    the IF-MIB `ifHC{In,Out}{Ucast,Multicast,Broadcast}Pkts` split and the
+    OpenConfig `{in,out}-{unicast,multicast,broadcast}-pkts` counters. The
+    direction is carried separately by `network.io.direction`, so one packet
+    counter + (`network.io.direction`, `network.packet.type`) replaces the six
+    name-encoded MIB leaves — the same "direction/class is a dimension, not a
+    name segment" idiom upstream applied to `system.network.io`.
+
+    Reused verbatim from the OTel `ciscoosreceiver`, which carries it on
+    `system.network.packet.count` (values multicast/broadcast); `unicast` is
+    added here for the full split. A low-cardinality dimension (three bounded
+    values) — safe on metric data points.
+  examples: ["unicast", "multicast", "broadcast"]
+
+- key: network.packet.drop.reason
+  type:
+    members:
+    - id: no_route
+      value: "no_route"
+      brief: No route to the destination (unroutable).
+      stability: development
+    - id: acl_deny
+      value: "acl_deny"
+      brief: Denied by an access-control list / filter.
+      stability: development
+    - id: policy
+      value: "policy"
+      brief: Dropped by a policer or other forwarding policy.
+      stability: development
+    - id: ttl_expired
+      value: "ttl_expired"
+      brief: TTL/hop-limit reached zero.
+      stability: development
+    - id: mtu_exceeded
+      value: "mtu_exceeded"
+      brief: Exceeds the egress MTU and could not be fragmented (e.g. DF set).
+      stability: development
+    - id: congestion
+      value: "congestion"
+      brief: Dropped under congestion (queue/WRED/RED tail-drop).
+      stability: development
+    - id: no_buffer
+      value: "no_buffer"
+      brief: No buffer / forwarding resource available.
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: The drop reason could not be determined.
+      stability: development
+  stability: development
+  brief: >
+    Why an intentional discard occurred — the classification of a dropped packet, or of the class of discards counted by a metric data point.
+  note: |
+    An open enum (custom values MAY be used), lowercase. Carries the cause of an
+    INTENTIONAL drop only — the discards counterpart to how `error.type`
+    classifies `network.interface.errors`. Corrupt/unintended packets (bad
+    checksum, malformed, CRC/frame errors) are NOT classified here: they belong
+    on `network.interface.errors` + `error.type`.
+
+    Carried as an `opt_in` dimension on `network.interface.discards`, and on a
+    `network.flow` record where the flow's disposition is a drop, so a dropped
+    flow can state its reason.
+
+    On the discards counter the dimension is populatable only where the datapath
+    exposes per-reason discard counters natively (ASIC / SONiC `DEBUG_COUNTER`,
+    eBPF). SNMP IF-MIB `ifIn/OutDiscards` and OpenConfig `in/out-discards` expose
+    an unattributed discard scalar, so the dimension is omitted there and the
+    counter remains all-discards. When emitted it MUST be a genuine per-reason
+    breakdown of this counter — not synthesized by merging counters of different
+    scopes (e.g. L3-global no-route counts with per-class policer drops), which
+    would make `sum by (drop.reason)` inconsistent with the total.
+  examples: ["no_route", "acl_deny", "policy", "congestion"]

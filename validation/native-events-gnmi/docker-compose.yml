@@ -1,0 +1,57 @@
+# Events Lane B (push): SR Linux gNMI on-change -> gnmic(file) -> otelcol(filelog
+# + OTTL) -> weaver. SR Linux + srlmgmt come from containerlab (run-events-gnmi.sh).
+# gnmic and the collector share ./shared so the file written by one is tailed by
+# the other.
+name: netlab-events-gnmi
+
+services:
+  weaver-livecheck:
+    image: ${WEAVER_IMAGE:-otel/weaver:latest}
+    container_name: evg-weaver
+    working_dir: /work
+    volumes:
+      - ../..:/work:ro
+      - ./out:/out
+    networks: [srlmgmt]
+    command:
+      - registry
+      - live-check
+      - -r
+      - model
+      - --input-source
+      - otlp
+      - --otlp-grpc-address
+      - 0.0.0.0
+      - --otlp-grpc-port
+      - "4317"
+      - --inactivity-timeout
+      - "0"
+      - --format
+      - json
+      - --output
+      - /out
+
+  gnmic:
+    image: ${GNMIC_IMAGE:-ghcr.io/openconfig/gnmic:latest}
+    container_name: evg-gnmic
+    networks: [srlmgmt]
+    volumes:
+      - ./gnmic.yaml:/gnmic.yaml:ro
+      - ./shared:/shared
+    command: ["--config", "/gnmic.yaml", "subscribe"]
+
+  otelcol:
+    image: ${OTELCOL_IMAGE:-otel/opentelemetry-collector-contrib:latest}
+    container_name: evg-otelcol
+    depends_on: [weaver-livecheck]
+    networks: [srlmgmt]
+    environment:
+      WEAVER_ENDPOINT: evg-weaver:4317
+    volumes:
+      - ./otelcol-events-gnmi.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./shared:/shared
+
+networks:
+  srlmgmt:
+    name: srlmgmt
+    external: true

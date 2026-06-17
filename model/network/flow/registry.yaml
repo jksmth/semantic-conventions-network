@@ -1,0 +1,185 @@
+---
+file_format: definition/2
+
+# network-flow — the PASSIVE traffic-observation package (Axis-2 passive).
+#
+# A flow is an aggregated CONVERSATION an observer WATCHED — IPFIX/NetFlow/sFlow
+# exports, cloud VPC flow logs, eBPF flow records. The passive complement of
+# network-test: a TEST is synthetic traffic the agent GENERATED and timed; a
+# FLOW is real traffic the observer OBSERVED. Both reuse the identical
+# source.*/destination.* / network.observer.* / network.transport / network.type
+# vocabulary (the correlation glue, ref'd not minted) — authored in model/source
+# + model/destination expressly so a test and the flows it generates share one
+# endpoint set and correlate.
+#
+# ONE record, five sources. IPFIX, NetFlow, sFlow flows, cloud VPC flow logs, and
+# eBPF flow ALL map onto this single record; the export transport is NOT a
+# per-protocol package — it is the already-authored
+# `network.observer.collection.method` (`ipfix`/`netflow`/`sflow`/`ebpf`/
+# `cloud_flow_logs`). The collection method disambiguates the source; the flow
+# attribute set is identical across all five.
+#
+# THREE carriers, ONE attribute set (docs/conventions.md flow-signal table; the
+# network-test carrier-dual discipline). The attribute set here is defined ONCE
+# and is identical regardless of which carrier emits it:
+#   - RECORD  — a log-based Event (`event.name = network.flow`). THE DEFAULT: a
+#     flow is a time-bounded OBSERVATION, a structured event, not a causal span.
+#     The cardinality-safe, backend-portable floor (events.yaml).
+#   - METRIC  — counters over BOUNDED dimensions only, never the 5-tuple
+#     (metrics.yaml).
+#   - SPAN    — blessed for connection-oriented L4/L7 flows where duration +
+#     correlation drive tooling. NOT authored as a separate file: when flow emits
+#     spans it MUST share the span conventions pinned in network-test. A
+#     pragmatic carrier, not a fallback; not a valid trace tree.
+# Prior art picked all three: ElastiFlow → span, OBI → metric counter,
+# IPFIX/NetFlow → event record. The model blesses all three.
+#
+# Correlation handles, two distinct jobs (the join keys):
+#   - `network.flow.id`     — the PRODUCING SYSTEM's own flow handle (IPFIX
+#     flowId, NetFlow record key, sFlow sample id, eBPF flow cookie):
+#     unidirectional, observer-scoped, opaque. The join to network.session.id /
+#     network.nat.port_block. NOT community-id.
+#   - `network.community_id` — the deterministic BIDIRECTIONAL 5-tuple hash
+#     (community-id spec; ECS network.community_id). The CROSS-OBSERVER handle:
+#     recognises the same conversation seen by two observers. Referenced from
+#     ECS, not invented.
+#
+# Non-overlap rules (the boundaries that keep flow separable):
+#   - vs network.session  — a session is a LIVE, durable, counted STATE object
+#     (firewall/conntrack); a flow is a CLOSED OBSERVATION of past traffic. A
+#     session is emphatically NOT a flow record.
+#   - vs network.test     — test carries MEASUREMENT fields (latency/loss/jitter/
+#     mos); flow carries CONVERSATION fields (byte/packet deltas, transport
+#     flags). Neither re-mints the other's.
+#   - vs network.nat      — nat owns the translation BINDING; flow reuses
+#     network.flow.id to join to it.
+#   - vs network.packet   — packet owns the per-packet class/drop dimensions;
+#     flow reuses network.packet.drop.reason on a dropped flow (action=drop).
+#
+# Reused (referenced, never minted): source.* / destination.* (incl. the
+# observed-endpoint additions — as.number/as.name/hostname/address.prefix/mac/
+# zone/vlan.* in model/source + model/destination), network.transport,
+# network.type, network.protocol.name, network.observer.id (Resource), the
+# observation interface as the existing network.interface.name (its ingress/
+# egress SENSE given by network.flow.direction — carrying distinct ingress AND
+# egress interfaces simultaneously, IPFIX IE 10/14, is part of the deferred IPFIX
+# IE long tail), network.tunnel.id (single tunnel/MPLS identity), and
+# network.packet.drop.reason (the why, on a dropped flow).
+#
+# DEFERRED (named, not re-solved): initiator/responder directionality (request vs
+# response — a flow-STATE axis, distinct from the observation-point
+# network.flow.direction minted here); resolved endpoint NAMES; the IPFIX IE long
+# tail (next-hop, AS-path, the ordered MPLS LABEL STACK beyond tunnel.id, distinct
+# ingress+egress interfaces); geo/identity/threat enrichment. Owners: ElastiFlow
+# NetObserver / OpenTelemetry eBPF (OBI) / the flow semconv effort / the security
+# conventions.
+#
+# Prior art: IPFIX (RFC 7011) Information Elements — flowId, flowDirection (IE 61),
+# octetDeltaCount/packetDeltaCount, tcpControlBits, forwardingStatus (RFC 7270,
+# IE 89); Cisco NetFlow v5/v9; sFlow (RFC 3176) sampled flow; AWS VPC flow logs
+# (action ACCEPT/REJECT); ECS network.community_id / network.bytes / network.packets
+# / network.direction; the community-id spec (corelight/community-id-spec).
+# Upstream coordination: semconv #1721 (source.*/destination.* as the home for
+# third-party observation), #3740 (AS enrichment).
+
+attributes:
+# --- Correlation handles -----------------------------------------------
+- key: network.flow.id
+  type: string
+  stability: development
+  brief: >
+    The producing system's own flow handle — unidirectional, observer-scoped, opaque.
+  note: >
+    The flow record key the EXPORTER assigned: IPFIX `flowId`, a NetFlow record key, an sFlow sample id, an eBPF flow cookie. Unidirectional and scoped to the producing observer (two observers, or the two directions of one conversation, carry different ids) — so it is the JOIN key to `network.session.id` and `network.nat.port_block`, NOT a cross-observer correlator. For recognising the same conversation across observers or directions, use `network.community_id`. Opaque: do not parse. Record/span-level — never a metric dimension (unbounded).
+  examples: ["123456", "0xab12cd34", "flow-7f3a91"]
+
+- key: network.community_id
+  type: string
+  stability: development
+  brief: >
+    The deterministic bidirectional 5-tuple hash that identifies a conversation across observers (community-id spec; ECS `network.community_id`).
+  note: >
+    A seeded hash over the ordered 5-tuple (addresses, ports, transport) per the community-id spec (github.com/corelight/community-id-spec), rendered as its standard versioned string. Because the tuple is canonicalised before hashing, BOTH directions and EVERY observer of the same conversation compute the IDENTICAL value — the cross-observer / bidirectional correlation handle, complementary to the per-exporter `network.flow.id`. In the `network.*` (not `network.flow.*`) namespace because it is a property of the conversation, not of one observer's flow record; referenced verbatim from ECS, not invented. Record/span-level.
+  examples: ["1:wCb3OG7yAFWflJAUoEt3MzWdHbg="]
+
+# --- Direction (observation-point perspective) -------------------------
+- key: network.flow.direction
+  type:
+    members:
+    - id: ingress
+      value: "ingress"
+      brief: Into the observation point (IPFIX `flowDirection` 0).
+      stability: development
+    - id: egress
+      value: "egress"
+      brief: Out of the observation point (IPFIX `flowDirection` 1).
+      stability: development
+  stability: development
+  brief: >
+    The direction of the flow relative to the observation point — ingress or egress.
+  note: >
+    The CLOSED two-value set IPFIX defines on `flowDirection` (IE 61: 0=ingress, 1=egress) — direction relative to the OBSERVATION POINT, well-defined for the passive-observer case in a way interface-self transmit/receive is not. Flow therefore does NOT reuse `network.io.direction` (interface-self `transmit`/`receive`, undefined for a third-party-observed flow). Distinct from initiator/responder (request-vs-response), which is a flow-STATE axis and is deferred. With the observation interface (`network.interface.name`), `ingress` means that interface is the ingress interface, `egress` the egress. A low-cardinality, bounded dimension — safe on metrics.
+  examples: ["ingress", "egress"]
+
+# --- Conversation measures (record + metric) ---------------------------
+- key: network.flow.bytes
+  type: int
+  stability: development
+  brief: >
+    Bytes observed for the flow (IPFIX `octetDeltaCount`; ECS `network.bytes`).
+  note: >
+    The observed octet count of the flow over the export interval. Carried as a measure on the `network.flow` record AND as the `network.flow.bytes` counter (metrics.yaml). With `network.flow.sampling.rate` set, this is the SAMPLED count — multiply by the rate to estimate the true volume.
+  examples: [1500, 1048576]
+
+- key: network.flow.packets
+  type: int
+  stability: development
+  brief: >
+    Packets observed for the flow (IPFIX `packetDeltaCount`; ECS `network.packets`).
+  note: >
+    The observed packet count of the flow over the export interval. Carried as a measure on the `network.flow` record AND as the `network.flow.packets` counter (metrics.yaml). A sampled single-packet observation is this with `packets = 1` plus `network.flow.sampling.rate` — the reason a "sampled packet" is a flow observation, not a distinct packet record. With sampling set, multiply by the rate to estimate the true count.
+  examples: [1, 10, 4096]
+
+# --- Disposition -------------------------------------------------------
+- key: network.flow.action
+  type:
+    members:
+    - id: accept
+      value: "accept"
+      brief: The flow was forwarded / permitted (AWS VPC `ACCEPT`).
+      stability: development
+    - id: drop
+      value: "drop"
+      brief: The flow was silently discarded.
+      stability: development
+    - id: reject
+      value: "reject"
+      brief: >
+        The flow was discarded WITH notification (ICMP unreachable / TCP RST; AWS VPC `REJECT`).
+      stability: development
+  stability: development
+  brief: >
+    The disposition of the flow — what happened to it: accept, drop, or reject.
+  note: >
+    The three mutually-exclusive OUTCOMES: `accept` = forwarded/permitted, `drop` = silently discarded, `reject` = discarded with notification (ICMP unreachable / TCP RST). An open enum (custom values MAY be used), lowercase, but the three-value disposition set is the well-known, metric-safe closed core. It carries WHAT HAPPENED, deliberately NOT a separate policy VERDICT (`allow`/`deny`): a `deny` is realised as either `drop` (silent) or `reject` (notified), so an `allow`/`deny` axis would overlap `drop`/`reject` and break `sum by (action)` on the metric. The WHY of a drop is the orthogonal `network.packet.drop.reason` (`acl_deny`/`policy`/`no_route`/…), reused on the flow record where `action = drop`. Values track AWS VPC flow-log `ACCEPT`/`REJECT` and ECS — `accept` (not `allow`); a firewall `allow`→`accept`, `deny`→`drop` or `reject` by whether the device notified. A low-cardinality, bounded dimension — safe on metrics.
+  examples: ["accept", "drop", "reject"]
+
+# --- Sampling ----------------------------------------------------------
+- key: network.flow.sampling.rate
+  type: int
+  stability: development
+  brief: >
+    The 1-in-N sampling rate the observation was taken at (N; 1 = unsampled).
+  note: >
+    The denominator N of a 1-in-N sample: the observer recorded one of every N packets/flows. Makes sFlow and sampled-NetFlow correct (the raw `network.flow.bytes`/`.packets` are the SAMPLED counts; multiply by N for the population estimate) and is what folds a "sampled packet" into a flow observation (`packets = 1` + the rate). Absent or `1` means unsampled. Record/span-level; on metrics it scopes interpretation rather than partitioning, so it is opt-in, not a primary dimension.
+  examples: [1, 100, 1024]
+
+# --- Transport flags ---------------------------------------------------
+- key: network.flow.tcp.flags
+  type: string
+  stability: development
+  brief: >
+    The cumulative TCP control bits observed across the flow (IPFIX `tcpControlBits`).
+  note: >
+    The OR of the TCP control bits seen over the flow's lifetime (IPFIX `tcpControlBits`), rendered dotted-lowercase to match the repo key style and the `conventions.md` cardinality table (e.g. `syn.ack`, `fin.ack`, `rst`). Opt-in: meaningful only for TCP flows and high-fidelity exporters. Record/span-level — never a metric dimension (effectively unbounded).
+  examples: ["syn", "syn.ack", "fin.ack", "rst"]

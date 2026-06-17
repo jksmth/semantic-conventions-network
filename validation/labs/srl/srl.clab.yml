@@ -1,0 +1,25 @@
+# A real NOS lab: two Nokia SR Linux nodes, wired back-to-back, managed by
+# containerlab. SR Linux is a genuine network OS (not a routing daemon on Linux)
+# with its own management plane — here we use its built-in SNMP server.
+#
+# Boot with containerlab (see ../../native-srl/run-srl.sh). The management
+# network is named + pinned so the collector can join it and poll SNMP.
+name: srl
+
+mgmt:
+  network: srlmgmt
+  ipv4-subnet: 172.22.22.0/24
+
+topology:
+  nodes:
+    srl1:
+      kind: nokia_srlinux
+      image: ghcr.io/nokia/srlinux:latest
+      mgmt-ipv4: 172.22.22.11
+    srl2:
+      kind: nokia_srlinux
+      image: ghcr.io/nokia/srlinux:latest
+      mgmt-ipv4: 172.22.22.12
+
+  links:
+    - endpoints: ["srl1:e1-1", "srl2:e1-1"]

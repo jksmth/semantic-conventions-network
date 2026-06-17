@@ -1,0 +1,50 @@
+# Crosswalk: Linux `ip -j -s link` (kernel netlink)  ->  network.* semconv.
+#
+# The SAME network.* targets as crosswalk/frr.yaml, reached from different
+# source fields via different transforms — the "(source, target) cell owns the
+# transform" point. This source adds the byte/packet counters FRR's CLI lacks
+# (network.interface.io / .packets), and uses Linux operstate which exercises
+# the diagnostic oper-state values.
+
+source: linux-iproute2
+
+records:
+  device:
+    entity: network.device
+    identity:
+      network.device.id: {from: __device_id__}
+    description:
+      network.device.type: {const: router}
+      network.device.role: {from: role}
+      os.name: {const: Linux}
+
+  interface:
+    entity: network.interface
+    identity:
+      network.device.id: {from: __device_id__}
+      network.interface.name: {from: __index__}
+    description:
+      network.interface.oper.state: {field: operstate, transform: linux_operstate}
+      network.interface.mtu: {field: mtu}
+      network.interface.mac: {field: address, transform: mac_ieee, optional: true}
+    metrics:
+      - name: network.interface.io
+        instrument: counter
+        unit: "By"
+        points:
+          - value: {field: rx_bytes}
+            attributes:
+              network.io.direction: {const: receive}
+          - value: {field: tx_bytes}
+            attributes:
+              network.io.direction: {const: transmit}
+      - name: network.interface.packets
+        instrument: counter
+        unit: "{packet}"
+        points:
+          - value: {field: rx_packets}
+            attributes:
+              network.io.direction: {const: receive}
+          - value: {field: tx_packets}
+            attributes:
+              network.io.direction: {const: transmit}

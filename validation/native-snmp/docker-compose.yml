@@ -1,0 +1,62 @@
+# Real off-box SNMP path:
+#   net-snmp agent (in r1's netns)  <--udp/161 poll--  otelcol [snmpreceiver+OTTL]
+#       --OTLP-->  weaver registry live-check
+#
+# Boot the FRR lab first (run-snmp.sh does this) so r1 exists and the external
+# `netlab` network is present.
+name: netlab-snmp
+
+services:
+  # Standard SNMP agent on the netlab network, serving its own real interfaces.
+  # (Sharing the router's netns would be more faithful, but Docker Desktop's
+  # LinuxKit kernel refuses the udp/161 bind in a shared netns — so the agent
+  # runs as its own node here. On a real NOS, SNMP lives on the device itself.)
+  snmp-agent-r1:
+    build: ./agent
+    container_name: netlab-snmpd-r1
+    networks: [netlab]
+
+  # Weaver OTLP listener / conformance gate (same as ../native).
+  weaver-livecheck:
+    image: ${WEAVER_IMAGE:-otel/weaver:latest}
+    container_name: netlab-weaver
+    working_dir: /work
+    volumes:
+      - ../..:/work:ro
+      - ./out:/out
+    networks: [netlab]
+    command:
+      - registry
+      - live-check
+      - -r
+      - model
+      - --input-source
+      - otlp
+      - --otlp-grpc-address
+      - 0.0.0.0
+      - --otlp-grpc-port
+      - "4317"
+      - --inactivity-timeout
+      - "0"
+      - --format
+      - json
+      - --output
+      - /out
+
+  # The collector: polls SNMP off-box, maps via OTTL, exports OTLP to weaver.
+  otelcol:
+    image: ${OTELCOL_IMAGE:-otel/opentelemetry-collector-contrib:latest}
+    container_name: netlab-otelcol
+    networks: [netlab]
+    depends_on: [snmp-agent-r1, weaver-livecheck]
+    environment:
+      SNMP_TARGET: netlab-snmpd-r1 # the agent node on netlab
+      DEVICE_ID: r1
+      WEAVER_ENDPOINT: weaver-livecheck:4317
+    volumes:
+      - ./otelcol-snmp.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+networks:
+  netlab:
+    name: netlab
+    external: true

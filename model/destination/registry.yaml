@@ -1,0 +1,99 @@
+---
+file_format: definition/2
+
+# network — destination.* observed-endpoint additions (proposed-upstream).
+#
+# The base destination.* group (destination.address, destination.port) is
+# UPSTREAM (development), pulled in via the manifest dependency and ref'd
+# directly — NOT redefined here. This package ADDS the observed-endpoint
+# descriptors network telemetry needs that upstream has not yet defined:
+#   destination.hostname / destination.address.prefix
+#   destination.as.number / destination.as.name
+#   destination.mac / destination.zone / destination.vlan.id / destination.vlan.name
+#
+# This is the egress/target twin of model/source. See model/source/registry.yaml
+# for the full rationale (source.*/destination.* is the sanctioned home for
+# third-party-observed traffic — #1721 — NOT the connection-scoped, Stable
+# network.peer.*; AS enrichment tracks #3740; authored so the
+# network.flow records and the network.test.* traceroute hops reuse the
+# IDENTICAL endpoint vocabulary).
+#
+# A traceroute hop and a probe target are both a `destination` the observing
+# agent measured toward — so the per-hop AS/hostname/prefix enrichment the
+# network-test package needs lives here, not in a minted network.peer.* set.
+#
+# PROPOSED-UPSTREAM (squatting risk): names in the destination.* namespace we
+# do not own; realign if upstream lands a different shape.
+
+attributes:
+- key: destination.hostname
+  type: string
+  stability: development
+  brief: >
+    The reverse-DNS / resolved hostname of the destination address, when obtained by a lookup the address field itself does not carry.
+  note: >
+    Upstream `destination.address` is "domain name if available WITHOUT reverse DNS lookup; otherwise IP". This is the name obtained BY a reverse-DNS lookup of `destination.address` — the distinct enrichment kept separate from a configured name. On a traceroute hop, the resolved name of the hop address. Record/span-level; never a metric dimension.
+  examples: ["ae-1.r01.londen03.uk.bb.example.net"]
+
+- key: destination.address.prefix
+  type: string
+  stability: development
+  brief: >
+    The CIDR prefix (RFC 4632) the destination address falls within — the routing aggregate, used to collapse per-IP cardinality.
+  note: >
+    The covering prefix for `destination.address`. The cardinality-reduction handle for grouping observed endpoints / traceroute hops by IP range rather than individual address. Record/span-level.
+  examples: ["192.0.2.0/24", "2001:db8::/32"]
+
+- key: destination.as.number
+  type: int
+  stability: development
+  brief: >
+    The Autonomous System number that originates/owns the destination address.
+  note: >
+    The 32-bit ASN (4-byte ASNs as their integer value). The canonical machine identifier — emit this, not just a rendered label (#3740 enrichment principle); `destination.as.name` is the display companion. On a traceroute hop, the AS the hop belongs to ("which networks is my traffic transiting"). Tracks semantic-conventions #3740; ECS `destination.as.number`.
+  examples: [64500, 15169, 4200000000]
+
+- key: destination.as.name
+  type: string
+  stability: development
+  brief: >
+    The human-readable name/organization of the Autonomous System that owns the destination address.
+  note: >
+    The rendered AS name (WHOIS org). Companion to `destination.as.number`; prefer the number for matching, this for display. Tracks #3740; ECS `destination.as.organization.name`.
+  examples: ["EXAMPLE-AS", "GOOGLE"]
+
+- key: destination.mac
+  type: string
+  stability: development
+  brief: >
+    MAC address of the destination of a network exchange, as observed by a third party (no clear client/server relationship).
+  note: >
+    Represented in IEEE RA hexadecimal form: hyphen-separated octets, uppercase (e.g. 00-90-F5-E9-7B-36). For some observed traffic this is a reserved multicast group address. Mirrors `host.mac` for the observed source/destination model. ECS `destination.mac`.
+  examples: ["01-80-C2-00-00-0E"]
+
+- key: destination.zone
+  type: string
+  stability: development
+  brief: >
+    The network zone the traffic is categorized as going to, as reported by an observer.
+  note: >
+    A coarse, operator-defined area label (security zone, locality). For active tests, `onnet`/`offnet` (on the operator's network vs the public internet) is the common split. ECS `destination.zone`. Open string.
+  examples: ["internal", "external", "dmz", "onnet", "offnet"]
+
+- key: destination.vlan.id
+  type: int
+  stability: development
+  brief: >
+    The VLAN id (802.1Q tag) the destination traffic was observed on, as reported by the observer.
+  note: >
+    The observed egress VLAN of a flow/packet — distinct from the `network.vlan` ENTITY (a configured broadcast domain on a device). An observed-traffic record field; pairs with `destination.vlan.name`.
+  examples: [20, 100]
+
+- key: destination.vlan.name
+  type: string
+  stability: development
+  brief: >
+    The VLAN name the destination traffic was observed on, as reported by the observer.
+  note: >
+    The human-readable name companion to `destination.vlan.id`.
+  examples: ["inside", "servers", "guest"]

@@ -17,13 +17,13 @@ A worked mapping of an **all-in-one home/SMB gateway** — router + switch + Wi-
 
 ## 1. The device
 
-`home-gw-7f3a` is a self-reporting all-in-one gateway, with four variant forms.
+`AC-DE-48-00-7F-3A` is a self-reporting all-in-one gateway, with four variant forms.
 
 ```
                          INTERNET
                             │
          ┌──────────────────┴───────────────────┐
-         │  home-gw-7f3a   role=cpe              │  network.device
+         │  AC-DE-48-00-7F-3A   role=cpe         │  network.device
          │  (+ AP facet, + modem/ONT facet)      │  NO network.observer
          │   self-reporting (producer = subject) │  (it reports for itself)
          ├───────────────────────────────────────┤
@@ -38,9 +38,16 @@ A worked mapping of an **all-in-one home/SMB gateway** — router + switch + Wi-
 
 | Property | Value |
 |----------|-------|
-| Identity | `network.device.id = home-gw-7f3a` · `role = cpe` (+ AP / modem facets) |
+| Identity | `network.device.id = AC-DE-48-00-7F-3A` · `role = cpe` (+ AP / modem facets) |
 | Observer | **absent** — producer = subject (the box reports its own telemetry) |
 | Managed by | an ACS / controller over TR-069 (CWMP) or USP (TR-369) |
+
+> **Identity source.** An all-in-one home gateway is a **sealed access unit** with no
+> operator-assigned hostname, so its `network.device.id` is its base hardware **MAC
+> address** (`AC-DE-48-00-7F-3A`, in `host.mac` IEEE-RA hex form) — the stable
+> per-unit key an ACS already keys CWMP/USP sessions on. Serial number is an equally
+> valid source where the ACS exposes it; either is opaque and unprefixed. See
+> [source precedence by device class](../../docs/entity-model.md#source-precedence-by-device-class).
 
 Because the box *is* its own AP and modem, there is no `network.observer` relaying its
 telemetry — the opposite of the [WLC-managed AP](../wifi-ap/README.md#9-producer--subject--the-wlc-as-observer)
@@ -68,7 +75,7 @@ Everything below is the **delta**.
 
 ```mermaid
 graph TD
-    GW["network.device home-gw-7f3a<br/>role=cpe (+ AP + modem facets)<br/>NO network.observer"]
+    GW["network.device AC-DE-48-00-7F-3A<br/>role=cpe (+ AP + modem facets)<br/>NO network.observer"]
 
     D1["Delta 1 — self-reported RF<br/>network.wifi.* with observer absent"]
     D2["Delta 2 — STA-mode uplink<br/>radio.mode=['sta'] + upstream link.id<br/>+ radio.rssi/snr self-metric"]
@@ -205,7 +212,7 @@ applied at the management layer.
   as members of the shared attachment-point-move family
   (`network.wifi.station.previous_bss.bssid` is the move record's previous-locator half).
 - **Firewall / NAT-*rule* config & per-device policy** — the NAT44 translation *table* is
-  now modelled (the box-wide `network.nat.translations` gauge, `type=source`, exactly as
+  now modelled (the box-wide `network.nat.translation.count` gauge, `type=source`, exactly as
   the [CPE router emits it](../cpe-router/README.md#10-nat44--the-translation-table)); the
   carrier CG-NAT pool / port-block story is [the BNG](../bng/README.md)'s, not a home
   box's. What remains a gap is NAT/firewall **rules** — DNAT port-forwards, VIPs, and

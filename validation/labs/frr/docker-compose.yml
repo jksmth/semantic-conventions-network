@@ -1,0 +1,46 @@
+# Minimal two-router FRR lab — the smallest "real config that boots" network
+# that yields a device + interfaces + an Established BGP neighbour.
+#
+# r1 (AS 65001) <--- eBGP ---> r2 (AS 65002) on a single bridge.
+# Each advertises its own loopback so the session carries real prefixes.
+#
+# Two independent on-box collection methods are captured from each router:
+#   - FRR control/interface state  (vtysh -c "show ... json")
+#   - Linux kernel interface stats (ip -j -s link  — netlink, not FRR)
+# They are different subsystems with different field names, so they prove the
+# crosswalk/transform layer generalises and that both land on one identity.
+#
+# Apple-Silicon note: frrouting/frr is multi-arch (arm64 native), ~150 MB,
+# a few MB RAM per container. No emulation.
+services:
+  r1:
+    image: quay.io/frrouting/frr:10.2.1
+    container_name: netlab-r1
+    hostname: r1
+    privileged: true
+    volumes:
+      - ./r1/frr.conf:/etc/frr/frr.conf:ro
+      - ./daemons:/etc/frr/daemons:ro
+    networks:
+      netlab:
+        ipv4_address: 172.20.0.11
+
+  r2:
+    image: quay.io/frrouting/frr:10.2.1
+    container_name: netlab-r2
+    hostname: r2
+    privileged: true
+    volumes:
+      - ./r2/frr.conf:/etc/frr/frr.conf:ro
+      - ./daemons:/etc/frr/daemons:ro
+    networks:
+      netlab:
+        ipv4_address: 172.20.0.12
+
+networks:
+  netlab:
+    name: netlab
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24

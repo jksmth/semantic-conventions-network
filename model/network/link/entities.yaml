@@ -1,0 +1,69 @@
+---
+file_format: definition/2
+entities:
+- type: network.link
+  stability: development
+  brief: >
+    A topology relationship between network endpoints: a point-to-point interconnect, or a point-to-multipoint / shared-medium domain (a PON ODN tree, a WiFi BSS, a PtMP sector, a broadcast LAN).
+  note: |
+    The cross-device edge entity (RFC 8345 node/termination-point/link
+    concepts, rendered OTel-idiomatically rather than transcribed).
+    Counters do NOT attach here — traffic
+    telemetry lives on `network.interface`; a link carries topology,
+    discovery, and state.
+
+    Identity (device-scoping does NOT apply — a link spans devices):
+    - Full identity is just `network.link.id`; it is not scoped by a single
+      `network.device`. The local termination
+      (`network.link.local.device.id` + `…interface.id`) SHOULD be present
+      so the link can be anchored to a reporting device.
+
+    Two orthogonal classification axes:
+    - `network.link.type` — the layer/medium (physical/logical/optical/
+      lag/tunnel/pseudowire).
+    - `network.link.topology` — the OSPF/IETF network type
+      (point_to_point/point_to_multipoint/broadcast/nbma).
+
+    Point-to-multipoint = the 1:N primitive:
+    - A `point_to_multipoint` link is a HEAD-END-OWNED HUB. The head-end is
+      the local termination (the root) and emits the link entity — it owns
+      and observes the whole medium (OLT→ONUs over OMCI, AP/WLC→stations
+      over CAPWAP; the observer relationship). `remote.*` is unset.
+    - Each MEMBER endpoint (an ONU/station, itself a `network.device`)
+      attaches by carrying the link's `network.link.id` as a descriptive
+      attribute — the hub-and-spoke membership pattern of `network.lag` and
+      `network.stp.instance`. So "every member on this medium" is a query
+      over `network.link.id`, with no n-ary edge.
+    - Per-technology on-medium ids ARE this link id: PON's `network.pon.id`
+      (the ODN / OLT PON-port) is the `network.link.id` of the
+      point_to_multipoint PON link; a WiFi BSSID likewise.
+
+    Deferred (NOT blockers for this entity):
+    - Rich relationship *typing* (a first-class "is-root-of"/"is-member-of"
+      association) and the ownerless `broadcast` segment with multiple
+      independent observers await the OTel edge/relationship model.
+    - Domain-level aggregate telemetry (member count, contention/airtime
+      utilisation, split ratio) is where link metrics would attach when
+      warranted — deferred with the metrics package. The
+      `network.link.discovered`/`network.link.lost` lifecycle is authored as
+      the `network.link.state.changed` event (the absent↔present edges).
+  identity:
+  - ref: network.link.id
+  description:
+  - ref: network.link.type
+    requirement_level: recommended
+  - ref: network.link.topology
+    requirement_level: recommended
+  - ref: network.link.local.device.id
+    requirement_level: recommended
+  - ref: network.link.local.interface.name
+    requirement_level: recommended
+  - ref: network.link.remote.device.id
+    requirement_level:
+      conditionally_required: when the link is point_to_point and the far end is known
+  - ref: network.link.remote.interface.name
+    requirement_level: opt_in
+  - ref: network.link.discovery.protocol
+    requirement_level: opt_in
+  - ref: network.link.state
+    requirement_level: recommended

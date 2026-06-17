@@ -102,7 +102,7 @@ Keep them separate.
 |---------|----------|-------------|---------------------|
 | **Inventory** | device, chassis, line card, optic, BGP peer identity | Low | Entity / Resource |
 | **State** | interface up/down, BGP established, route counts, optical BER | Medium | Metrics (current) + Events (transitions) |
-| **Traffic** | flows, sampled packets, conversations | Very high | Logs/Events (records) + Metrics (aggregates) |
+| **Traffic** | flows/conversations, classified + dropped packets | Very high | Logs/Events (records) + Metrics (aggregates) |
 
 ### Axis 2 — who is observing
 
@@ -160,8 +160,9 @@ for how that is actually transmitted (it is *not* nested resources).
 │  │  tap, agent, fw)   │  .id     │  bytes, pkts, action    │  network.transport  │
 │  └───────────────────┘          └────────────────────────┘  network.type        │
 │                                  ┌────────────────────────┐                      │
-│                                  │ network.packet (sampled)│                      │
-│                                  └────────────────────────┘                      │
+│                                  │ network.packet          │  drop.reason on a    │
+│                                  │ (class / drop dims)     │  dropped flow;       │
+│                                  └────────────────────────┘  pcap = out of scope  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -199,3 +200,15 @@ the shared `network.*` connection attributes, and this registry references them 
 adds the infrastructure sub-namespaces. The attribute names are designed to be
 upstream-compatible (development stability, OTel naming rules, reuse of existing
 attributes) so a path to upstream remains open but is not required.
+
+The OpenTelemetry **Networking Working Group**
+([#3769](https://github.com/open-telemetry/semantic-conventions/issues/3769)) has been
+chartered to take the `network.*` namespace from "nebulous ownership" and to improve and
+extend it — the same scope expansion this registry prototypes. The intent is for this
+work to serve as reference input, and a possible adoption candidate, for that group;
+contributing a worked `network.*` model to the body chartered to own `network.*` is the
+sanctioned path, not a land grab. WG membership does not by itself confer adoption — and
+the stabilization gate still applies: conventions cannot graduate past `development` until
+instrumentation uses them (see [roadmap.md](roadmap.md#the-central-risk-validation)). The
+WG roadmap of SNMP / NetFlow / eBPF Collector receivers is the credible path to the
+validating instrumentation that gate requires.

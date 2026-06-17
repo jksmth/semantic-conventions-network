@@ -1,0 +1,155 @@
+---
+file_format: definition/2
+
+# network-test metrics — the scalar active measures.
+#
+# All associate with `network.test` (the configured test); each datapoint also
+# carries the producing `network.observer.id` (the vantage) and the resolved
+# `destination.address` (the target this run hit) as Resource/low-cardinality
+# context.
+#
+# Units are normalized to UCUM base-SI (docs/conventions.md): seconds for all
+# time measures, ratio (0–1) for loss, By/s for throughput, the unity `1` for
+# scores/availability.
+#
+# SUMMARY STATISTICS — instrument choice, not an attribute. A test run yields a
+# distribution of samples (and, over time and across vantages, a larger one).
+# The OTel rule is that aggregations over a metric's attributes MUST be
+# meaningful, so a `statistic=avg|min|max|p95` DIMENSION is forbidden — you
+# cannot sum or average across avg+min+max+p95. The idiomatic OTel home for a
+# distribution is a HISTOGRAM (as `http.client.request.duration` is): one
+# histogram data point natively carries min, max, sum and count plus buckets,
+# so avg/min/max/percentiles are ALL derivable from the single metric without a
+# statistic dimension and without separate `.min`/`.max`/`.p95` metric names.
+# Latency and jitter are therefore Histograms.
+#
+# PRE-AGGREGATED PRODUCERS populate the histogram fields directly; they MUST NOT
+# record a single representative value as "one observation" (that discards the
+# real count/min/max and makes percentiles meaningless). A producer that only
+# has summary stats (e.g. ThousandEyes/SamKnows: rtt_min/avg/max/std + a sample
+# count) maps: count := sample count; sum := avg × count; min := rtt_min;
+# max := rtt_max; no buckets — both `explicit_bounds` and `bucket_counts` are
+# omitted (empty), so only count/sum/min/max are populated. This keeps
+# count/sum/min/max correct and fleet-aggregatable (cross-vantage mean is the
+# sample-weighted Σsum/Σcount). PERCENTILES are available ONLY from producers
+# that emit real buckets/samples — a summary producer contributes no percentile
+# resolution, which is the honest cost. STDDEV (rtt_std) is not a histogram
+# field: it rides the network.test.executed record, never a separate series.
+#
+# These are MEASUREMENT fields only — they carry no flow CONVERSATION fields
+# (byte/packet deltas, transport flags), keeping the network.flow
+# package cleanly separable.
+
+metrics:
+- name: network.test.latency
+  stability: development
+  brief: >
+    Latency measured by an active test.
+  note: >
+    Seconds. A Histogram so avg (sum/count), min, max, and percentiles (p50/p95/p99) all derive from the one metric — no per-statistic dimension or separate metric names. Round-trip latency (the common case: ICMP echo, TCP connect); a one-way test (where the agent and target are time-synchronised) records the one-way delay into the same metric and distinguishes it with `network.io.direction`. The end-to-end value; the per-hop breakdown is the path result.
+  instrument: histogram
+  unit: "s"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: opt_in
+  entity_associations:
+  - network.test
+
+- name: network.test.jitter
+  stability: development
+  brief: >
+    Packet-delay variation (jitter) measured by an active test.
+  note: >
+    Seconds (the IPDV definition of RFC 3393). A Histogram for the same reason as `network.test.latency`. `network.io.direction` separates downstream (receive) from upstream (transmit) jitter on a two-way test.
+  instrument: histogram
+  unit: "s"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: opt_in
+  entity_associations:
+  - network.test
+
+- name: network.test.loss.ratio
+  stability: development
+  brief: >
+    Packet-loss ratio measured by an active test (0.0–1.0).
+  note: >
+    A ratio, not a percentage. A gauge: each run yields a single loss ratio, and the mean loss across vantages/time is meaningful. `network.io.direction` is opt-in for one-way loss tests.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: opt_in
+  entity_associations:
+  - network.test
+
+- name: network.test.throughput
+  stability: development
+  brief: >
+    Throughput measured by an active throughput/speed test.
+  note: >
+    Bytes per second. `network.io.direction` (required) distinguishes download (receive) from upload (transmit); `network.transport`/`network.protocol.name` identify the transport/app protocol. The total bytes transferred is the run-record `network.test.bytes`.
+  instrument: gauge
+  unit: "By/s"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  - ref: network.transport
+    requirement_level: recommended
+  - ref: network.protocol.name
+    requirement_level:
+      conditionally_required: When the test runs over an application-layer protocol (e.g. http).
+  entity_associations:
+  - network.test
+
+- name: network.test.mos
+  stability: development
+  brief: >
+    Mean Opinion Score from a voice/RTP quality test (1.0 bad – 5.0 excellent).
+  note: >
+    The ITU-T P.800 Mean Opinion Score, computed from latency, jitter and loss during a voice/RTP test — the active measure of call quality. A gauge. Other scoring schemes (e.g. the ITU-T G.107 R-factor) use `network.test.score`.
+  instrument: gauge
+  unit: "1"
+  entity_associations:
+  - network.test
+
+- name: network.test.score
+  stability: development
+  brief: >
+    A voice/quality score other than MOS, identified by `network.test.score.type`.
+  note: >
+    Carries the ITU-T G.107 E-model R-factor (0–100) and similar composite quality scores without minting one metric per scheme; `network.test.score.type` names the scheme. MOS itself has the dedicated `network.test.mos`.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.test.score.type
+    requirement_level: required
+  entity_associations:
+  - network.test
+
+- name: network.test.availability
+  stability: development
+  brief: >
+    Fraction of recent test executions that succeeded / met reachability — the availability / SLO signal (0.0–1.0).
+  note: |
+    Reachability to a target measured from OUTSIDE the subject IS
+    availability, and only an active observer can emit it. A ratio over a
+    window (successes / attempts, or up-time fraction); the binary
+    point-in-time reachability is the floor case (1=reachable, 0=not). The SLA
+    verdict that wraps it is `network.test.sla.state`; the breach is the
+    `network.test.degraded` / `network.test.unreachable` event.
+  instrument: gauge
+  unit: "1"
+  entity_associations:
+  - network.test
+
+- name: network.test.disconnection.duration
+  stability: development
+  brief: >
+    Duration of a connectivity-loss event detected by an active test.
+  note: >
+    Seconds. The measured length of a full connectivity-loss episode an active probe detected and timed (the SamKnows-style CPE disconnection measure). A Histogram so the distribution of outage lengths over time is preserved (avg/min/max/percentiles all derive from the one metric). The point-in-time alarm for the same episode is `network.test.unreachable`; the binary up/down state is the floor case of `network.test.availability`. Associates `network.test`; the vantage is the Resource `network.observer.id`.
+  instrument: histogram
+  unit: "s"
+  entity_associations:
+  - network.test

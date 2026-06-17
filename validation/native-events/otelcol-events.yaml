@@ -1,0 +1,85 @@
+# Events lane: SR Linux syslog -> syslogreceiver -> OTTL -> network.state.changed
+# OTel event -> OTLP -> weaver live-check.
+#
+# A port flap on SR Linux logs (via sr_chassis_mgr):
+#   chassis|...|EV|portDown|W: Interface ethernet-1/1 is now down for reason: ...
+# We parse that into the model's state-change event. Per model/network/interface/
+# events.yaml the emitted event.name stays `network.state.changed` (the interface
+# refinement does NOT mint a new name); the entity is network.interface.
+
+receivers:
+  syslog:
+    udp:
+      listen_address: 0.0.0.0:514
+    protocol: rfc5424
+
+processors:
+  # forward only the interface up/down lines; everything else is dropped so the
+  # event stream weaver sees is exactly the state-change events.
+  filter/only_port_events:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'not IsMatch(attributes["message"], "EV\\|port(Up|Down)")'
+
+  resource:
+    attributes:
+      - key: network.device.id
+        value: srl1
+        action: upsert
+      - key: network.device.type
+        value: router
+        action: upsert
+
+  transform/event:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        conditions: ['IsMatch(log.attributes["message"], "EV\\|portUp")']
+        statements:
+          - set(log.event_name, "network.state.changed")
+          - set(log.attributes["network.event.state.current"], "up")
+          - set(log.attributes["network.event.state.previous"], "down")
+          - set(log.attributes["network.event.state.dimension"], "operational")
+          - set(log.attributes["network.interface.name"], ExtractPatterns(log.attributes["message"], "(?P<n>ethernet-[-0-9/]+)")["n"])
+          - set(log.attributes["network.event.message"], log.attributes["message"])
+      - context: log
+        conditions: ['IsMatch(log.attributes["message"], "EV\\|portDown")']
+        statements:
+          - set(log.event_name, "network.state.changed")
+          - set(log.attributes["network.event.state.current"], "down")
+          - set(log.attributes["network.event.state.previous"], "up")
+          - set(log.attributes["network.event.state.dimension"], "operational")
+          - set(log.attributes["network.interface.name"], ExtractPatterns(log.attributes["message"], "(?P<n>ethernet-[-0-9/]+)")["n"])
+          - set(log.attributes["network.event.message"], log.attributes["message"])
+      # drop the raw syslog attributes so they aren't flagged as non-registry
+      - context: log
+        statements:
+          - delete_key(log.attributes, "message")
+          - delete_key(log.attributes, "appname")
+          - delete_key(log.attributes, "hostname")
+          - delete_key(log.attributes, "facility")
+          - delete_key(log.attributes, "facility_text")
+          - delete_key(log.attributes, "priority")
+          - delete_key(log.attributes, "severity")
+          - delete_key(log.attributes, "version")
+          - delete_key(log.attributes, "proc_id")
+          - delete_key(log.attributes, "msg_id")
+          - delete_key(log.attributes, "structured_data")
+
+exporters:
+  otlp:
+    endpoint: ${env:WEAVER_ENDPOINT}
+    tls:
+      insecure: true
+    compression: none
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    logs:
+      receivers: [syslog]
+      processors: [filter/only_port_events, transform/event, resource]
+      exporters: [otlp]

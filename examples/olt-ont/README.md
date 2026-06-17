@@ -35,7 +35,7 @@ Two device classes are in play: one OLT, and the ONTs it serves.
    │           ONT-1  ONT-7   ONT-14  …  ONT-127                              │
    └──────────────────────────────────────────────────────────────────────────┘
 
-   ONT  ont-7f3a  (type=ont, role=onu) — its own network.device
+   ONT  XMPL01234567  (type=ont, role=onu) — its own network.device
      ├─ upstream optics (burst-mode)        UNI ports (Ethernet to the home)
      └─ telemetry RELAYED by the OLT over OMCI  ── the OLT is the observer
 ```
@@ -46,13 +46,23 @@ Two device classes are in play: one OLT, and the ONTs it serves.
 | PON technology | XGS-PON (`network.pon.type = xgspon`) — 10G symmetric |
 | Split ratio | 1:32 / 1:64 per PON port |
 | Uplink | 100G to the BNG, per-subscriber S-VLANs |
-| ONT identity | `network.device.id = ont-7f3a` · `type = ont` · `role = onu` |
+| ONT identity | `network.device.id = XMPL01234567` · `type = ont` · `role = onu` |
 | ONT telemetry | measured by the OLT, relayed over **OMCI** (ITU-T G.988) |
 
 The OLT is a modular chassis exactly like the [core router](../core-router/README.md);
 the genuinely new material here is everything *south* of the PON port. The headline
 shape: **one OLT relays for thousands of ONTs, each an independent `network.device`,
 with the OLT as `network.observer`.**
+
+> **Identity sources.** The OLT is a managed, provisioned chassis, so its
+> `network.device.id` is an operator/controller-**assigned** id (`olt-metro-03`
+> here). The ONT is a **sealed access unit** with no operator hostname at fleet
+> scale, so its `network.device.id` is its hardware **serial** — here
+> `XMPL01234567`, an example in the ITU-T G.984.3 GPON serial format (a
+> 4-character vendor id + 8 hex digits; `XMPL` is a fictional vendor id) that
+> the OLT already uses to address it over OMCI, and the
+> recommended source for sealed units. Both ids are opaque and unprefixed. See
+> [source precedence by device class](../../docs/entity-model.md#source-precedence-by-device-class).
 
 ---
 
@@ -70,7 +80,7 @@ graph TD
 
     LINK["network.link<br/>topology=point_to_multipoint<br/>id = network.pon.id = gpon-4/0"]
 
-    ONT["network.device<br/>ont-7f3a · type=ont · role=onu"]
+    ONT["network.device<br/>XMPL01234567 · type=ont · role=onu"]
     OBS["network.observer = OLT<br/>collection.method=omci<br/>(producer ≠ subject)"]
     OCH["network.optical.channel (ONT)<br/>power · pon.onu.rssi · pon.bip/fec"]
     UNI["network.interface UNI<br/>(Ethernet to the home)"]
@@ -224,6 +234,33 @@ dimension** on the bandwidth metrics, not a separate entity — the full GEM-por
 Alloc-ID **service-mapping** plane (which GEM carries which service to which VLAN) is
 deferred to a future access package.
 
+### 7.1 GEM traffic counters + channel capacity
+
+The per-GEM-port forwarding counters and the PON channel's usable capacity reuse the
+**existing interface metrics** — no PON-specific counter names. GEM traffic is just
+interface traffic on the PON-typed interface, split by the standard
+unicast/multicast/broadcast cast via `network.packet.type` (PON has a dedicated
+**multicast GEM port** for downstream group traffic, so the cast split is meaningful
+here). Downstream is `network.io.direction=transmit` (OLT→ONU).
+
+| What | `network.*` | Nokia YANG (`nokia-sdan-xpon-statistics`) | BBF / OpenConfig |
+|------|-------------|-------------------------------------------|------------------|
+| GEM bytes by cast | `network.interface.io` · `direction=transmit` · `network.packet.type` | `out-{unicast,multicast,incidental-broadcast}-gem-port-bytes` | `bbf-xpon` GEM stats |
+| GEM packets by cast | `network.interface.packets` · `direction=transmit` · `network.packet.type` | `out-{…}-gem-port-packets` | `bbf-xpon` GEM stats |
+| GEM dropped packets by cast | `network.interface.discards` · `direction=transmit` · `network.packet.type` | `out-{…}-gem-port-dropped-packets` | `bbf-xpon` GEM stats |
+| PON channel L2 capacity | `network.pon.capacity` (`bit/s`, + `direction`) | `bbf-xpon:channel-pair` `nokia-xponinfra-cac:{us,ds}-l2-capacity` | `bbf-xpon` channel-pair |
+
+`network.pon.capacity` is the usable L2 envelope of the shared channel — the DBA
+denominator: `capacity` ≥ Σ `network.pon.dba.granted` ≥ `network.pon.dba.used`. It
+attaches to the PON-port `network.interface`, not a per-ONU object.
+
+Two things deliberately **not** modelled here (see [§11](#11-what-this-device-does-not-model)):
+the **GEM Port-ID as a per-flow traffic handle** (the IETF `draft-ietf-opsawg-ipfix-gpon-gem`
+`ingressGponGemPortId` / `egressGponGemPortId`, and the GEM PTI content-type) — a
+flow-record field awaiting the `network.flow.*` package — and the **byte-level drop**
+counter (`out-{…}-gem-port-dropped-bytes`, unit `By`), which has no `{packet}`-unit
+home on `network.interface.discards` and awaits an upstream byte-drop decision.
+
 ---
 
 ## 8. Uplinks, forwarding context & hardware health
@@ -261,6 +298,7 @@ This is the part PON forces that no other device does. An ONT is its own
 | Collection method | `network.observer.collection.method = omci` | ITU-T G.988 |
 | Which OLT/PON serves the ONT | `network.observer.id` + `network.pon.id` link membership | OLT view |
 | ONT optics / UNI ports / CPU / uptime | `network.optical.*` / `network.interface` (+ duplex) / `network.device.*` | relayed over OMCI |
+| ONT admin / oper state | `network.admin.state` / `network.oper.state` (+ `network.admin.status` / `network.oper.status` metrics) | RFC 8348 `state/admin-state`,`oper-state` (Altiplano NETCONF) or AMS `getStatus` `adminState`/`operationalState` (SOAP) |
 | Subscriber identity (opt-in, PII) | `network.access.subscriber.id` | record-level only |
 
 `network.observer.id` is a **Resource-level** attribute — it identifies who relayed
@@ -268,6 +306,22 @@ the telemetry, not a per-data-point dimension. A different OLT taking over re-ho
 one Resource attribute, not every series. The same controller-relay shape is reused
 across the access estate: `omci` for PON here, `capwap` for a
 [WiFi WLC](../../docs/entity-model.md#entity-catalogue), `vmanage` for SD-WAN.
+
+The ONT's state is carried on **three orthogonal axes** (see
+[state modelling](../../docs/conventions.md#admin-oper-and-health-are-three-orthogonal-axes)),
+and an OLT exposes all three — do not conflate them:
+
+- `network.admin.state` (`locked`/`unlocked`) — has an operator administratively
+  disabled the ONT (the AMS `adminState`, the RFC 8348 `admin-state`)?
+- `network.oper.state` (`enabled`/`disabled`) — is it operationally able to carry
+  traffic (the AMS `operationalState` UP/DOWN, the RFC 8348 `oper-state`)?
+- `network.pon.onu.state` (`offline`/`ranging`/`operational`/…) — the **PON
+  activation** state machine (§6), a finer PON-specific axis the coarse oper-state
+  cannot express.
+
+Health (`hw.state`: ok/degraded/failed) is the fourth, separate axis. An ONT can be
+`admin_state=unlocked` + `oper_state=disabled` + `pon.onu.state=ranging` (admitted,
+not yet carrying traffic) — three values one merged "status" would collapse.
 
 > **Still open upstream.** The precise mechanism for an observer to attach OTel
 > *entity context* to a third-party subject is pending the OpenTelemetry entities
@@ -298,14 +352,29 @@ simply stops seeing the burst reports `cause=signal_loss`. Both associate with t
 
 Deliberately out of scope, to keep the boundaries honest:
 
-- **GEM-port / T-CONT / Alloc-ID service mapping** — which GEM carries which service
-  to which VLAN. Only the DBA *bandwidth* half (§7) is modelled; the service-mapping
-  plane is deferred to a future access package.
+- **GEM Port-ID as observed-traffic identity** — "which GEM port a flow entered/left
+  on" (the IETF `draft-ietf-opsawg-ipfix-gpon-gem` `ingressGponGemPortId` /
+  `egressGponGemPortId`, and the GEM PTI content-type). This is a **flow-record**
+  field, deferred to the `network.flow.*` package (not yet authored); `network.pon.gem_port.id`
+  would be reused there as a record dimension, the same way `network.pon.id` is reused
+  across signals. High-cardinality (thousands of GEM ports per OLT) — a record field,
+  never a metric series.
+- **GEM ↔ T-CONT ↔ Alloc-ID ↔ VLAN service mapping** — which GEM carries which service
+  to which VLAN. This is durable *provisioning* state (a PON-forwarding sub-interface
+  layer in `network.pon.*`), not observed telemetry — mostly the OSS/BSS's data, not
+  the OLT's telemetry stream, so low observability value and deferred. (This is the
+  `network.pon.*` forwarding sub-layer, **not** the already-authored technology-neutral
+  `network.access.*` subscriber/BNG layer, which owns subscriber/service/circuit
+  *identity* and is a separate concern.)
+- **Byte-level GEM drop counter** (`out-{…}-gem-port-dropped-bytes`, unit `By`) — no
+  `{packet}`-unit home on `network.interface.discards`; deferred pending an upstream
+  byte-drop decision (the same open question HO flagged).
 - **ODN / splitter physical plant** — fibre runs and splitter stages as objects. Only
   the logical 1:N `network.link` (§4) is modelled.
 - **OTel entity-context attachment for third-party subjects** — the generic
   observer→subject entity binding (§9), parked pending the upstream entities SIG.
 
 Everything else — the 1:N tree, per-ONT burst RSSI, BIP/FEC, the activation/ranging
-state machine, ranging distance, DBA bandwidth, the OLT-as-observer mechanism, and
-the dying-gasp alarm — is authored.
+state machine, ranging distance, DBA bandwidth, the per-cast GEM traffic counters +
+channel capacity, the OLT-as-observer mechanism, and the dying-gasp alarm — is
+authored.

@@ -1,0 +1,25 @@
+# gnmic: subscribe on-change to SR Linux interface oper-state and write each
+# transition to a file as one JSON object per line (split-events) — the bridge
+# into the collector's filelog receiver. gnmic's OTLP output is metrics-only, so
+# events ride this file path instead.
+targets:
+  172.22.22.11:57400:
+    username: admin
+    password: NokiaSrl1!
+
+skip-verify: true
+encoding: json_ietf
+
+subscriptions:
+  if-oper:
+    paths:
+      - /interface[name=*]/oper-state
+    stream-mode: on-change
+    updates-only: true # suppress the initial full-state dump; only transitions
+
+outputs:
+  to-file:
+    type: file
+    filename: /shared/events.jsonl
+    format: event
+    split-events: true # one JSON object per line (not an array) for filelog

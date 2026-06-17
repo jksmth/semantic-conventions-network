@@ -1,0 +1,24 @@
+---
+file_format: definition/2
+
+# PROTOTYPE refinement (events-envelope design).
+# The interface domain attaches the shared `network.state.changed` base event to
+# its entity. This does NOT mint a new event name — the emitted `event.name`
+# stays `network.state.changed`; the refinement id documents the consumer-facing
+# semantic (interface admin/oper transition) and binds the entity + narrows notes.
+# See docs/conventions.md (state modelling).
+event_refinements:
+- id: network.interface.state.changed
+  ref: network.state.changed
+  stability: development
+  brief: >
+    An interface transitioned admin or operational state (link up/down, shut/no-shut). The interface up/down transition the `network.interface.oper.status` gauge cannot reconstruct after a restart.
+  note: >
+    `network.event.state.dimension=operational` for a link up/down; `administrative` for an operator shut/no-shut. Native endpoints in `network.event.state.previous`/`current` (e.g. "up"→"down").
+  entity_associations:
+  - network.interface
+  attributes:
+  - ref: network.event.state.dimension
+    requirement_level: recommended
+    note: >
+      For interfaces, distinguishes a fault (operational down) from an operator action (administrative shut) — the IF-MIB ifAdminStatus vs ifOperStatus split.

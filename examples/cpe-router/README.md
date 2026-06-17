@@ -50,13 +50,13 @@ graph TD
     INST["network.instance<br/>name=default · type=default"]
 
     GE0["network.interface ge-0<br/>ethernet · role=uplink"]
-    GE0835["network.interface ge-0.835<br/>subinterface · parent.id=ge-0<br/>encapsulation.outer_vlan=835"]
+    GE0835["network.interface ge-0.835<br/>subinterface · parent.name=ge-0<br/>encapsulation.outer_vlan=835"]
     GE1["network.interface ge-1<br/>ethernet · role=uplink"]
-    DIAL["network.interface dialer0<br/>virtual · lower_layer=[ge-1]<br/>oper_state=dormant/up"]
+    DIAL["network.interface dialer0<br/>virtual · lower_layer=[ge-1]<br/>interface.oper.state=dormant/up"]
     GE2["network.interface ge-2<br/>ethernet · role=access<br/>vlan.mode=trunk · tagged=[10,20] native=30"]
 
     OCH["network.optical.channel<br/>type=client · interface.id=ge-0"]
-    BGP["network.neighbor<br/>protocol=bgp · asn · address<br/>state=up / native=Established"]
+    BGP["network.neighbor<br/>protocol=bgp · as.number · address<br/>state=up / native=Established"]
     PPP["PPPoE session<br/>network.access.session.* on dialer0"]
 
     VL10["network.vlan 10"]
@@ -96,7 +96,7 @@ The `network.device` entity and its descriptive attributes.
 
 | `network.*` | SNMP | OpenConfig |
 |-------------|------|------------|
-| `network.device.id` *(identifying)* | — (operator-assigned; derive & document) | — (operator-assigned) |
+| `network.device.id` *(identifying)* | derive from `entPhysicalSerialNum` (sealed CPE → serial) | `/components/.../serial-no`, else operator-assigned |
 | `network.device.name` | `sysName` (SNMPv2-MIB) | `/system/state/hostname` |
 | `network.device.type = router` | inferred from `sysServices` / `sysObjectID` | derived (no direct leaf) |
 | `network.device.role = cpe` | — (operator metadata) | — (operator metadata) |
@@ -107,43 +107,47 @@ The `network.device` entity and its descriptive attributes.
 | `os.name` / `os.version` | `entPhysicalSoftwareRev` / `sysDescr` | `/system/state/software-version` |
 | `network.instance` name=`default` | default routing context | `/network-instances/network-instance[name=default]` |
 
-> **Tip.** `network.device.id` is the one value you must define yourself — it has no
-> single MIB source. Pick a stable, opaque key (a persisted UUID, a controller
-> system-ip, or a deterministic hash) and document how each collection method
-> populates it. See
-> [the reconciliation problem](../../docs/entity-model.md#the-reconciliation-problem).
+> **Tip.** `network.device.id` has no single MIB source — it is the [`host.id`
+> pattern](https://opentelemetry.io/docs/specs/semconv/resource/host/): one opaque
+> key whose source depends on the device class. A CPE is a **sealed access unit**, so
+> the recommended source is its hardware **serial number** (`entPhysicalSerialNum`) —
+> immutable and fleet-unique, where a managed core box would instead use an
+> operator-assigned id or hostname. Keep the value opaque (no `serial:` prefix),
+> hold it stable for life, and document how each collection method populates it. See
+> [source precedence by device class](../../docs/entity-model.md#source-precedence-by-device-class)
+> and [the reconciliation problem](../../docs/entity-model.md#the-reconciliation-problem).
 
 ---
 
 ## 4. Interfaces
 
 Five interface objects, all `network.interface`, identity scoped by
-(`network.device.id`, `network.interface.id`).
+(`network.device.id`, `network.interface.name`).
 
 | # | Interface | `type` | layering | `role` |
 |---|-----------|--------|----------|--------|
 | 1 | `ge-0` (fiber WAN) | `ethernet` | — | `uplink` |
-| 2 | `ge-0.835` | `subinterface` | `parent.id=ge-0` · `encapsulation.outer_vlan=835` | `uplink` |
+| 2 | `ge-0.835` | `subinterface` | `parent.name=ge-0` · `encapsulation.outer_vlan=835` | `uplink` |
 | 3 | `ge-1` (copper WAN) | `ethernet` | — | `uplink` |
-| 4 | `dialer0` | `virtual` | `lower_layer.id=[ge-1]` | `uplink` |
+| 4 | `dialer0` | `virtual` | `lower_layer.name=[ge-1]` | `uplink` |
 | 5 | `ge-2` (LAN trunk) | `ethernet` | — | `access` |
 
-`parent.id` expresses 1:1 containment (a sub-interface on its parent);
-`lower_layer.id[]` expresses protocol stacking (the dialer over `ge-1`).
+`parent.name` expresses 1:1 containment (a sub-interface on its parent);
+`lower_layer.name[]` expresses protocol stacking (the dialer over `ge-1`).
 
 ### 4.1 Interface state & attributes
 
 | `network.*` | SNMP | OpenConfig |
 |-------------|------|------------|
 | `network.interface.index` *(descriptive)* | `ifIndex` (IF-MIB) | `/interfaces/interface/state/ifindex` |
-| `network.interface.admin_state` | `ifAdminStatus` (IF-MIB, RFC 2863) | `/interfaces/interface/state/admin-status` |
-| `network.interface.oper_state` | `ifOperStatus` (IF-MIB, RFC 2863) | `/interfaces/interface/state/oper-status` |
+| `network.interface.admin.state` | `ifAdminStatus` (IF-MIB, RFC 2863) | `/interfaces/interface/state/admin-status` |
+| `network.interface.oper.state` | `ifOperStatus` (IF-MIB, RFC 2863) | `/interfaces/interface/state/oper-status` |
 | `network.interface.speed` (entity + gauge) | `ifHighSpeed` (Mbit/s → bit/s) | `/interfaces/interface/.../state/port-speed` |
 | `network.interface.mtu` | `ifMtu` | `/interfaces/interface/state/mtu` |
 | `network.interface.duplex` | `dot3StatsDuplexStatus` (EtherLike-MIB) | `/interfaces/interface/ethernet/state/duplex-mode` |
-| `network.interface.mac.address` | `ifPhysAddress` | `/interfaces/interface/ethernet/state/mac-address` |
+| `network.interface.mac` | `ifPhysAddress` | `/interfaces/interface/ethernet/state/mac-address` |
 
-`oper_state` carries the full RFC 2863 `ifOperStatus` vocabulary, including
+`network.interface.oper.state` carries the full RFC 2863 `ifOperStatus` vocabulary, including
 `dormant` — exactly the dialer's pre-PPP state — and `lower_layer_down`,
 `not_present`.
 
@@ -155,9 +159,14 @@ only required dimension. Emitted per interface, including `ge-0.835` and `dialer
 | `network.*` metric | Unit | SNMP (rx / tx) | OpenConfig (under `.../state/counters/`) |
 |--------------------|------|----------------|------------------------------------------|
 | `network.interface.io` | `By` | `ifHCInOctets` / `ifHCOutOctets` | `in-octets` / `out-octets` |
-| `network.interface.packets` | `{packet}` | `ifHCInUcastPkts` (+ multicast/broadcast) / `ifHCOutUcastPkts` | `in-unicast-pkts` / `out-unicast-pkts` |
+| `network.interface.packets` (+ `network.packet.type`) | `{packet}` | `ifHCIn{Ucast,Multicast,Broadcast}Pkts` / `ifHCOut{Ucast,Multicast,Broadcast}Pkts` | `in-{unicast,multicast,broadcast}-pkts` / `out-…` |
 | `network.interface.errors` (+ `error.type`) | `{error}` | `ifInErrors` / `ifOutErrors` | `in-errors` / `out-errors` |
-| `network.interface.discards` | `{packet}` | `ifInDiscards` / `ifOutDiscards` | `in-discards` / `out-discards` |
+| `network.interface.discards` (+ `network.packet.type`) | `{packet}` | `ifInDiscards` / `ifOutDiscards` | `in-discards` / `out-discards` |
+
+The unicast / multicast / broadcast split is the **opt-in `network.packet.type`
+dimension** (`model/packet/`), not separate metric names — the same
+"class is a dimension, not a name segment" idiom `network.io.direction` applies to
+direction. Without it, `network.interface.packets` is the all-casts total.
 
 ### 4.3 Routed sub-interface encapsulation
 
@@ -184,7 +193,7 @@ The eBGP session to ISP-A runs on `ge-0.835`, scoped to the `default` instance.
 | `network.neighbor` *(identity:* `device.id`, `protocol`, `neighbor.id`*)* | `bgpPeerTable` row (BGP4-MIB) | `/network-instances/.../protocols/protocol/bgp/neighbors/neighbor` |
 | `network.neighbor.protocol = bgp` | (table identity) | (BGP protocol container) |
 | `network.neighbor.address` | `bgpPeerRemoteAddr` | `.../neighbor/state/neighbor-address` |
-| `network.neighbor.asn` | `bgpPeerRemoteAs` | `.../neighbor/state/peer-as` |
+| `network.neighbor.as.number` | `bgpPeerRemoteAs` | `.../neighbor/state/peer-as` |
 | `network.neighbor.state = up` + `native_state = Established` | `bgpPeerState` (1–6) | `.../neighbor/state/session-state` |
 | `network.address_family = ipv4_unicast` | `bgp4PathAttrAddrFamily` (AFI/SAFI) | `.../neighbor/afi-safis/afi-safi/state/afi-safi-name` |
 
@@ -196,9 +205,9 @@ The `state`/`native_state` pair is the
 
 | `network.*` metric | SNMP | OpenConfig |
 |--------------------|------|------------|
-| `network.routing.routes` `route.state=advertised` | (announced count, vendor) | `.../afi-safi/state/prefixes/sent` |
-| `network.routing.routes` `route.state=received` | `bgpPeerInUpdates`-derived RIB | `.../afi-safi/state/prefixes/received` |
-| `network.routing.routes` `route.state=active`/`fib` | RIB/FIB count (vendor) | `.../afi-safi/state/prefixes/installed` |
+| `network.routing.route.count` `route.state=advertised` | (announced count, vendor) | `.../afi-safi/state/prefixes/sent` |
+| `network.routing.route.count` `route.state=received` | `bgpPeerInUpdates`-derived RIB | `.../afi-safi/state/prefixes/received` |
+| `network.routing.route.count` `route.state=active`/`fib` | RIB/FIB count (vendor) | `.../afi-safi/state/prefixes/installed` |
 | `network.routing.updates` (churn, direction) | `bgpPeerInUpdates` / `bgpPeerOutUpdates` | `.../neighbor/state/messages/{received,sent}/UPDATE` |
 | `network.protocol.messages` (`message.type`, direction) | `bgpPeer*Messages` | `.../neighbor/state/messages/...` |
 | `network.neighbor.state_changes` | `bgpPeerFsmEstablishedTransitions` | `.../neighbor/state/.../established-transitions` |
@@ -220,13 +229,13 @@ millions), per-session detail is permitted and hangs off the dialer interface.
 | `network.access.session.mru` | negotiated LCP MRU (the "why is my MTU 1492" number) |
 | `network.access.session.uptime` (gauge `s`) | session uptime, CPE side |
 
-The negotiated IP and default route appear as `network.routing.routes`
+The negotiated IP and default route appear as `network.routing.route.count`
 `route.state=received`. Session down/up is a
 `network.interface.state.changed` event on the dialer (`dormant` ↔ `up`).
 
 > PPPoE session detail intentionally lives here, **not** on `network.neighbor` (a
 > session is session-shaped, not adjacency-shaped) and not on the BNG-side aggregate
-> `network.access.sessions`. The CPE is the one place the *single* session matters.
+> `network.access.session.count`. The CPE is the one place the *single* session matters.
 
 ---
 
@@ -242,7 +251,7 @@ with the VLAN directly — no synthetic `l2vsi` instance is required (see
 | `network.interface.vlan.mode = trunk` | `dot1qPortVlanTable` | `/interfaces/interface/ethernet/switched-vlan/config/interface-mode` |
 | `network.interface.vlan.tagged = [10,20]` | `dot1qVlanStaticEgressPorts` (tagged set) | `.../switched-vlan/config/trunk-vlans` |
 | `network.interface.vlan.native = 30` | `dot1qPvid` | `.../switched-vlan/config/native-vlan` |
-| `network.l2.mac.entries` → `network.vlan` (`entry.type`) | `dot1qTpFdbTable` / `dot1qFdbTable` | `/network-instances/.../fdb/mac-table/entries` |
+| `network.l2.fdb.entry.count` → `network.vlan` (`entry.type`) | `dot1qTpFdbTable` / `dot1qFdbTable` | `/network-instances/.../fdb/mac-table/entries` |
 
 ---
 
@@ -291,7 +300,7 @@ Device-level health uses `network.device.*`; physical/environmental health uses
 A CPE has no forwarding-table fill telemetry worth reporting, so it emits **no**
 `network.component` at all — CPU/ASIC temperature is `hw.temperature`, keyed by
 `hw.id`. (The one table that *does* fill on a CPE — the NAT translation table — is the
-NAT-domain `network.nat.translations` gauge of §10, not a `network.component`.)
+NAT-domain `network.nat.translation.count` gauge of §10, not a `network.component`.)
 
 ---
 
@@ -306,10 +315,10 @@ occupancy** is device *state*, and that is the half a CPE emits.
 
 | `network.*` | SNMP | OpenConfig / TR-181 |
 |-------------|------|---------------------|
-| `network.nat.translations` `type=source` — active xlate count, assoc `network.device` | NAT-MIB session table (RFC 4008); vendor / Linux `nf_conntrack_count` | no standard OpenConfig NAT model; TR-181 `Device.NAT` |
+| `network.nat.translation.count` `type=source` — active xlate count, assoc `network.device` | NAT-MIB session table (RFC 4008); vendor / Linux `nf_conntrack_count` | no standard OpenConfig NAT model; TR-181 `Device.NAT` |
 | `network.nat.type = source` — the PAT discriminator (the only kind a single-WAN CPE does) | implicit (overload NAT) | — |
 
-`network.nat.translations` is the NAT analogue of `network.session.count`: one
+`network.nat.translation.count` is the NAT analogue of `network.session.count`: one
 updowncounter, dimensioned only by the low-cardinality `network.nat.type`, hung off
 `network.device`. It is the count that climbs toward the ~64k-per-address PAT ceiling
 when a P2P/CGNAT-unfriendly app opens thousands of flows — the CPE's NAT-exhaustion

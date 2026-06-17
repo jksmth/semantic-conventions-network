@@ -1,0 +1,92 @@
+file_format: definition/2
+metrics:
+  - name: network.lldp.frames
+    stability: development
+    brief: >
+      Total LLDP frames transmitted or received on the interface.
+    note: |
+      The per-port LLDP frame throughput baseline — `lldpStatsTxPortFramesTotal`
+      (transmit) and `lldpStatsRxPortFramesTotal` (receive) of the LLDP-MIB.
+      `network.io.direction` separates the two, mirroring `network.interface.io`
+      / `network.interface.packets` rather than minting separate tx/rx names.
+
+      Per-port scope: associates with `network.interface` (the local
+      port that sent/received the frames), NOT `network.neighbor` — an LLDP frame
+      is processed by the port before any remote system is identified.
+    instrument: counter
+    unit: "{frame}"
+    attributes:
+      - ref: network.io.direction
+        requirement_level: required
+    entity_associations:
+      - network.interface
+
+  - name: network.lldp.errors
+    stability: development
+    brief: >
+      Total LLDP receive-processing problems on the interface, by type.
+    note: |
+      The per-port LLDP rx error/discard counters of the LLDP-MIB, aggregated
+      into one counter with `error.type` as the discriminator — the same idiom
+      as `network.interface.errors` (which folds CRC/frame/runts/giants under
+      `{error}` + `error.type`). All LLDP error counters are receive-side, so no
+      `network.io.direction` dimension applies.
+
+      Well-known LLDP-scoped `error.type` values (LLDP-MIB `lldpStatsRxPortTable`):
+
+      - `frame_discarded` — rx frame dropped before processing
+        (`lldpStatsRxPortFramesDiscardedTotal`).
+      - `frame_error` — rx frame with a detected error, including length errors
+        (`lldpStatsRxPortFramesErrors`).
+      - `tlv_discarded` — a TLV in an otherwise-valid frame was discarded
+        (`lldpStatsRxPortTLVsDiscardedTotal`).
+      - `tlv_unrecognized` — a TLV type the agent does not recognise
+        (`lldpStatsRxPortTLVsUnrecognizedTotal`). Usually a multi-vendor /
+        version-skew indicator, NOT inherently a fault — do not alert on it
+        naively.
+      - `ageout` — a remote entry on THIS port aged out because frames stopped
+        arriving (`lldpStatsRxPortAgeoutsTotal`). Per-port scope — distinct from
+        the global table ageout on `network.lldp.remote_changes`
+        (`type=ageout`).
+
+      An open value set scoped to LLDP (as `network.protocol.message.type` is
+      scoped to its protocol); the upstream `error.type` key is reused, not
+      redefined. When absent, the counter is the total LLDP rx-error count.
+
+      Per-port scope: associates with `network.interface`, never
+      `network.neighbor` — a discarded/errored frame has no identifiable peer.
+    instrument: counter
+    unit: "{error}"
+    attributes:
+      - ref: error.type
+        requirement_level: recommended
+    entity_associations:
+      - network.interface
+
+  - name: network.lldp.remote_changes
+    stability: development
+    brief: >
+      Changes to the agent's LLDP remote-systems table, by kind.
+    note: |
+      The `lldpStatsRemTablesGroup` of the LLDP-MIB — the per-agent (global)
+      churn of the remote-systems table: `insert` / `delete` / `drop` / `ageout`
+      via the `network.lldp.remote_change.type` dimension.
+
+      The topology-trust signal at device scope: a high
+      `insert`/`delete` rate is a flapping adjacency / unstable underlay; `drop`
+      is the agent losing topology it saw (resource exhaustion — silent topology
+      blindness); `ageout` is neighbours disappearing, so `network.neighbor`
+      (`protocol=lldp`) and `network.link.remote.*` are going stale.
+
+      Global scope: associates with `network.device` (the LLDP agent),
+      NOT `network.neighbor` and NOT `network.interface` — the remote table is a
+      single per-agent structure. The MIB's `lldpStatsRemTablesLastChangeTime` is
+      deliberately not modelled: a `sysUpTime`-relative timestamp does not
+      aggregate, and the change rate is derivable from this counter.
+    instrument: counter
+    unit: "{change}"
+    attributes:
+      - ref: network.lldp.remote_change.type
+        requirement_level: required
+    entity_associations:
+      - network.device

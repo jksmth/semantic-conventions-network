@@ -1,0 +1,100 @@
+---
+file_format: definition/2
+entities:
+# ======================================================================
+# The radio — the RF carrier/PHY (the network.optical.channel analogue)
+# ======================================================================
+- type: network.wifi.radio
+  stability: development
+  brief: >
+    A WiFi radio: one IEEE 802.11 PHY on one frequency band (2.4/5/6/60 GHz), tuned to a channel/width at a transmit power.
+  note: |
+    The RF-signal entity: it models the radio signal —
+    channel, band, width, tx power, noise, airtime — which `hw.*` and
+    `network.interface` have no concept of. The radio *hardware* is a `hw.*`
+    FRU (`hw.id`; temperature/voltage/power/status are `hw.*`); the
+    L2/forwarding view, when one exists, is a `network.interface`
+    (`type=radio`) referenced by `network.interface.name`.
+
+    Why an entity: a radio is independently identifiable, telemetry
+    attaches to it over time (channel/airtime/noise/tx-power), and its
+    population is bounded by hardware (2–3 per AP), not by traffic. It hosts
+    one or more `network.wifi.bss` (related by `network.wifi.radio.id`).
+
+    Producer-agnostic: the same radio telemetry is emitted whether the AP
+    self-reports or a WLC relays it over CAPWAP — only `network.observer.*`
+    differs. `network.wifi.radio.mode` distinguishes an AP radio
+    from a client/STA-mode or mesh-backhaul radio.
+
+    Identity is scoped by device: the full identity is
+    (`network.device.id`, `network.wifi.radio.id`); the owning
+    `network.device` (`type=access_point`, or a self-reporting gateway) is
+    expected in the same Resource.
+  identity:
+  - ref: network.wifi.radio.id
+  description:
+  - ref: network.wifi.radio.band
+    requirement_level: recommended
+  - ref: network.wifi.radio.channel
+    requirement_level: recommended
+  - ref: network.wifi.radio.channel.width
+    requirement_level: recommended
+  - ref: network.wifi.radio.mode
+    requirement_level: recommended
+  - ref: network.wifi.radio.standard
+    requirement_level: opt_in
+  - ref: network.interface.name
+    requirement_level: opt_in
+    brief: >
+      The `network.interface` (`type=radio`) giving the radio's L2/ forwarding view, when one exists. Expected in the same Resource.
+  - ref: hw.id
+    requirement_level: opt_in
+    brief: >
+      The radio hardware FRU. Environmental telemetry (temperature, voltage, power, status) is reported under `hw.*` against this id. #magic___^_^___line
+# ======================================================================
+# The BSS — the virtual-AP, and the head-end of the 1:N RF cell
+# ======================================================================
+- type: network.wifi.bss
+  stability: development
+  brief: >
+    A Basic Service Set: one SSID advertised on one radio (a "virtual AP"), identified by a BSSID.
+  note: |
+    The core MAC-layer object — the thing a BSSID names and every wireless
+    tool keys on. It is BOTH an entity (carrying the SSID, security, and
+    VLAN binding, plus the associated-station count) AND the head-end of the
+    `point_to_multipoint` `network.link` that models the RF cell: the AP is
+    the link's local termination
+    (`network.link.local.device.id`) and the BSSID is the `network.link.id`;
+    associated stations attach by carrying that id rather than as entities.
+
+    Why an entity: a BSS is independently identifiable (the BSSID),
+    telemetry attaches over time (station count, per-BSS airtime), and its
+    population is bounded by config (a few per radio), not by traffic. The
+    individual associated stations are NOT entities — they are count+record
+    (the `network.wifi.bss.station.count` metric + per-station records; see the
+    station note in registry.yaml).
+
+    The SSID→VLAN binding (`network.wifi.bss.vlan`) carries the SSID's VLAN
+    membership. The ESS (the SSID across many BSSes/APs) is
+    not a first-class entity — it is the `network.wifi.bss.ssid` descriptor.
+
+    Identity is scoped by device: the full identity is
+    (`network.device.id`, `network.wifi.bss.bssid`); the parent radio is
+    referenced by `network.wifi.radio.id` and the owning `network.device` is
+    expected in the same Resource.
+  identity:
+  - ref: network.wifi.bss.bssid
+  description:
+  - ref: network.wifi.radio.id
+    requirement_level: recommended
+    brief: The radio (`network.wifi.radio`) hosting this BSS.
+  - ref: network.wifi.bss.ssid
+    requirement_level: recommended
+  - ref: network.wifi.bss.security
+    requirement_level: recommended
+  - ref: network.wifi.bss.vlan
+    requirement_level: opt_in
+  - ref: network.link.id
+    requirement_level: opt_in
+    brief: >
+      The `point_to_multipoint` `network.link` of the RF cell, whose id is this BSS's BSSID. Stations attach to the cell by carrying this id.

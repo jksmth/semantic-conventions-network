@@ -1,0 +1,50 @@
+# Real-NOS SNMP path: Nokia SR Linux (deployed by containerlab) polled off-box.
+#   SR Linux SNMP server  <--udp/161--  otelcol [snmpreceiver + OTTL]  --OTLP-->  weaver
+#
+# The SR Linux nodes + the `srlmgmt` network are created by containerlab
+# (run-srl.sh). This compose adds the collector + weaver onto that network.
+name: netlab-srl
+
+services:
+  weaver-livecheck:
+    image: ${WEAVER_IMAGE:-otel/weaver:latest}
+    container_name: srl-weaver
+    working_dir: /work
+    volumes:
+      - ../..:/work:ro
+      - ./out:/out
+    networks: [srlmgmt]
+    command:
+      - registry
+      - live-check
+      - -r
+      - model
+      - --input-source
+      - otlp
+      - --otlp-grpc-address
+      - 0.0.0.0
+      - --otlp-grpc-port
+      - "4317"
+      - --inactivity-timeout
+      - "0"
+      - --format
+      - json
+      - --output
+      - /out
+
+  otelcol:
+    image: ${OTELCOL_IMAGE:-otel/opentelemetry-collector-contrib:latest}
+    container_name: srl-otelcol
+    networks: [srlmgmt]
+    depends_on: [weaver-livecheck]
+    environment:
+      SNMP_TARGET: 172.22.22.11 # srl1's mgmt IP (see labs/srl/srl.clab.yml)
+      DEVICE_ID: srl1
+      WEAVER_ENDPOINT: weaver-livecheck:4317
+    volumes:
+      - ./otelcol-srl.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+networks:
+  srlmgmt:
+    name: srlmgmt
+    external: true

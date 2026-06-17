@@ -1,0 +1,76 @@
+---
+file_format: definition/2
+
+# network-flow metrics — the aggregate flow counters (the bounded carrier).
+#
+# The METRIC carrier of the three the flow-signal table blesses (record /
+# metric / span): rates/totals over BOUNDED dimensions only. The high-cardinality
+# 5-tuple (addresses, ports, flow.id, community_id, tcp.flags) lives on the
+# `network.flow` RECORD and MUST NOT appear here — the cardinality firewall
+# (docs/conventions.md). This is the OBI inter-zone counter pattern: byte/packet
+# totals partitioned by observer, direction, transport, action, and the coarse
+# source/destination ZONE — never the per-conversation tuple.
+#
+# Dimension classes:
+#   - CLOSED/bounded: network.flow.direction (ingress/egress),
+#     network.flow.action (the three-value disposition core), network.transport.
+#   - SOFT-bounded (operator discipline, not a closed enum): source.zone /
+#     destination.zone — an operator-defined open string, bounded by a small zone
+#     taxonomy in practice. Safe as a dimension only while that discipline holds.
+#
+# These counters carry the SAME measures (`network.flow.bytes`/`.packets`) as the
+# record's measure attributes — one name, two carriers (registry.yaml). Each data
+# point also carries the producing `network.observer.id` as Resource context.
+#
+# Prior art: ECS network.bytes / network.packets; OpenTelemetry eBPF (OBI)
+# inter-zone byte/packet counters; IPFIX octetDeltaCount / packetDeltaCount
+# aggregated to bounded keys.
+
+metrics:
+- name: network.flow.bytes
+  stability: development
+  brief: >
+    Bytes observed across flows, aggregated over bounded dimensions.
+  note: >
+    A counter (monotonic) of observed octets — the aggregate twin of the `network.flow.bytes` measure on the `network.flow` record. Keyed by bounded dimensions ONLY (observer/direction/transport/action/zone); the 5-tuple stays on the record. Where the underlying flows are sampled, this is the sampled total — `network.flow.sampling.rate` scopes its interpretation (opt-in; not a partitioning dimension).
+  instrument: counter
+  unit: "By"
+  attributes:
+  - ref: network.flow.direction
+    requirement_level: recommended
+  - ref: network.transport
+    requirement_level: recommended
+  - ref: network.flow.action
+    requirement_level: recommended
+  - ref: source.zone
+    requirement_level: opt_in
+  - ref: destination.zone
+    requirement_level: opt_in
+  - ref: network.flow.sampling.rate
+    requirement_level: opt_in
+  entity_associations:
+  - network.observer
+
+- name: network.flow.packets
+  stability: development
+  brief: >
+    Packets observed across flows, aggregated over bounded dimensions.
+  note: >
+    A counter (monotonic) of observed packets — the aggregate twin of the `network.flow.packets` measure on the `network.flow` record. Keyed by bounded dimensions ONLY (observer/direction/transport/action/zone); the 5-tuple stays on the record. Where the underlying flows are sampled, this is the sampled total — `network.flow.sampling.rate` scopes its interpretation (opt-in; not a partitioning dimension).
+  instrument: counter
+  unit: "{packet}"
+  attributes:
+  - ref: network.flow.direction
+    requirement_level: recommended
+  - ref: network.transport
+    requirement_level: recommended
+  - ref: network.flow.action
+    requirement_level: recommended
+  - ref: source.zone
+    requirement_level: opt_in
+  - ref: destination.zone
+    requirement_level: opt_in
+  - ref: network.flow.sampling.rate
+    requirement_level: opt_in
+  entity_associations:
+  - network.observer

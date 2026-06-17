@@ -1,0 +1,69 @@
+---
+file_format: definition/2
+metrics:
+# === Stateful session-table load (aggregate view) ============
+# A session is count + record, never an entity (see registry header). These
+# are the *count* half: low-cardinality aggregates dimensioned only by
+# session state/type (and, for connections, the reused upstream transport) —
+# NEVER by 5-tuple, SPI, subscriber, or any per-session identity. Per-session
+# detail is the `network.session.closed` record (events.yaml). The metrics
+# associate with `network.device` (the network function that holds the
+# table), since the session itself is not an entity.
+
+- name: network.session.count
+  stability: development
+  brief: >
+    Number of stateful sessions currently in the device's session/connection table, by state and type.
+  note: |
+    The concurrent session-table occupancy — a firewall's core runtime gauge
+    ("how many connections am I holding"), and the connection/SA analogue of
+    `network.access.session.count` for subscriber sessions. Dimensioned by the
+    low-cardinality `network.session.state` and `network.session.type`, plus
+    the reused upstream `network.transport` (opt-in, for connection-table
+    breakdowns by `tcp`/`udp`/…). It MUST NOT be dimensioned by 5-tuple,
+    SPI, or any per-session identity (the cardinality firewall).
+
+    The finite ceiling this fills toward is the
+    `network.component.utilization` (`session_table`) resource — exhaustion
+    of that table (a SYN flood filling it while CPU
+    looks idle) is the #1 firewall outage mode; the table-exhausted *event*
+    is deferred to the events package.
+  instrument: updowncounter
+  unit: "{session}"
+  attributes:
+  - ref: network.session.state
+    requirement_level: recommended
+  - ref: network.session.type
+    requirement_level: recommended
+  - ref: network.transport
+    requirement_level: opt_in
+  entity_associations:
+  - network.device
+
+- name: network.session.setups
+  stability: development
+  brief: >
+    Stateful sessions established (the connection-setup-rate / cps signal), by type.
+  note: >
+    A monotonic counter of sessions that reached the established state; its rate is the connections-per-second (cps) control-plane load signal — the #1 firewall load metric and the BNG subscriber calls-per-second signal. Pairs with `network.session.teardowns`. Low-cardinality (by `network.session.type` only; never per-session).
+  instrument: counter
+  unit: "{session}"
+  attributes:
+  - ref: network.session.type
+    requirement_level: recommended
+  entity_associations:
+  - network.device
+
+- name: network.session.teardowns
+  stability: development
+  brief: >
+    Stateful sessions removed from the table (closed, timed out, or cleared), by type.
+  note: >
+    A monotonic counter of session terminations — graceful close, idle timeout, policy clear, or SA expiry. A surge is the signature of a mass-disconnect or table-flush incident. The per-session *reason* and 5-tuple belong on the `network.session.closed` record (events.yaml, `network.session.close.reason`), not on this aggregate counter.
+  instrument: counter
+  unit: "{session}"
+  attributes:
+  - ref: network.session.type
+    requirement_level: recommended
+  entity_associations:
+  - network.device

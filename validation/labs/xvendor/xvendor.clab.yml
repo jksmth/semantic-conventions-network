@@ -1,0 +1,24 @@
+# Cross-vendor topology: Nokia SR Linux wired back-to-back with Cisco IOS-XE (IOL),
+# on one management network so a reconciler can read LLDP from both sides.
+# Needs colima + Rosetta (for the Cisco IOL node).
+name: xvendor
+
+mgmt:
+  network: xvmgmt
+  ipv4-subnet: 172.40.40.0/24
+
+topology:
+  nodes:
+    srl1:
+      kind: nokia_srlinux
+      image: ghcr.io/nokia/srlinux:latest
+      mgmt-ipv4: 172.40.40.11
+      startup-config: srl1.cli
+    cr1:
+      kind: cisco_iol
+      image: vrnetlab/cisco_iol:17.18.02
+      mgmt-ipv4: 172.40.40.12
+      startup-config: cr1.partial.cfg
+
+  links:
+    - endpoints: ["srl1:ethernet-1/1", "cr1:Ethernet0/1"]

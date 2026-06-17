@@ -1,0 +1,317 @@
+---
+file_format: definition/2
+
+# network-test — the ACTIVE / SYNTHETIC measurement package (Axis-2 active).
+#
+# The agent that GENERATES probe traffic and measures the result: ICMP/UDP/TCP
+# latency-loss-jitter, traceroute/path, BGP-route reachability, voice/RTP
+# quality, and the NETWORK layer of HTTP/DNS/page-load tests. The complement of
+# the passive observer (flow): a flow is traffic the observer WATCHES; a test is
+# traffic the agent SENT and timed.
+#
+# Axis mapping (docs/architecture.md): the agent is `network.observer`
+# (`type=agent`), it is `source.*`, the target is `destination.*`, and it is the
+# ONE perspective that can produce an AVAILABILITY / SLO signal (reachability to
+# a target measured from OUTSIDE the subject) — the metric every device-self-
+# telemetry scenario wanted and none could emit.
+#
+# Signal discipline (docs/conventions.md, flow-signal table): the attribute set is
+# IDENTICAL regardless of carrier (metric / record-Event / span) — defined once here.
+#   - the scalar measures are METRICS (bounded dimensions only);
+#   - the per-run detail and the per-hop path result are observations carried as a
+#     RECORD (Event) OR a SPAN tree — BOTH blessed, exactly as the model
+#     already blesses flow-as-record AND flow-as-span. The record is the always-valid
+#     floor (cardinality-safe, backend-portable); the span tree is an EQUAL carrier
+#     (not a grudging fallback) for the path-map / waterfall view that active-test
+#     and flow tooling ship in production today. A view that synthetic-path hops
+#     "should be events, not traces" is one reasonable position from the
+#     application-tracing perspective, not a constraint — in the network domain a
+#     timed hop-to-hop traversal is a real, ordered, measured sequence.
+#
+# Test vs flow (flow is now authored — model/network/flow): the split
+# is ORIGIN-OF-TRAFFIC (Axis-2). A FLOW (passive, `network.flow`) is real
+# traffic the observer WATCHES; a TEST (active, here) is synthetic traffic the agent
+# GENERATED and timed. Both reuse source.*/destination.* (incl. the observed-
+# endpoint additions: as.number/as.name/hostname/address.prefix/mac/zone/vlan.*
+# in model/source + model/destination) / network.observer.* / network.transport
+# / network.type (the correlation glue, ref'd not minted). Non-overlap rule: a
+# test carries MEASUREMENT fields (latency/loss/jitter/mos), never flow's
+# CONVERSATION fields (byte/packet deltas, transport-flag tags, community-id);
+# flow will carry the conversation fields, never re-minting active
+# latency/loss/jitter.
+# When flow authors spans, it MUST share the span conventions pinned here.
+#
+# Entities:
+#   - the AGENT is NOT an entity here — it is `network.observer` (`type=agent`),
+#     already authored; a cloud/ephemeral agent also carries `host.*`/`cloud.*`.
+#   - the configured TEST is the one entity (entities.yaml): bounded by config
+#     (thousands of tests, not millions of results), durable, telemetry over
+#     time. Identity is `network.test.id` ALONE — a test runs from MANY vantages,
+#     so it is NOT observer/device-scoped (the `network.link`/`network.path`
+#     identity rule, not the `network.interface` one). The agent↔test assignment
+#     is membership-by-reference: a result carries both `network.observer.id` and
+#     `network.test.id`; the fleet-of-vantages is a query, not N entities.
+#   - the TARGET and the per-hop PATH are subjects the agent is NOT (the
+#     active half): the target is `destination.*` (no entity — external), the
+#     hops are record/span fields. The "telemetry about a subject I am not"
+#     first-class association is pending the OTel entities SIG; respected here,
+#     not solved.
+#
+# Scope boundary (net/app): this package OWNS L3/L4 reachability +
+# latency/loss/jitter, the path result, BGP reachability, and transport-layer
+# VOICE/RTP quality (MOS / score) — network measures with no other home. It
+# REFERENCES, and does not re-model, the L7 application tests (HTTP/page-load/
+# API/DNS-as-app): those reuse the upstream HTTP / DNS / synthetic-monitoring-RUM
+# conventions, joined to the same run by `network.test.id`.
+#
+# Prior art: IETF IPPM — RFC 2681 (RTT), RFC 7679 (one-way delay), RFC 7680
+# (one-way loss), RFC 3393 (IPDV/jitter); TWAMP (RFC 5357); ITU-T G.107 (E-model
+# R-factor) + P.800 (MOS) for voice. Signal-shape precedent: active-measurement
+# and flow tooling already emit path/flow observations as both records and OTLP
+# spans. Upstream coordination: semconv #3682 (TCP metrics), #3740 (Autonomous
+# System enrichment → source.as.*/destination.as.*), #1721 (source.*/
+# destination.* as the home for third-party observation — see model/destination
+# for the per-hop subject enrichment).
+
+attributes:
+# --- Test identity & classification ------------------------------------
+- key: network.test.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of the configured synthetic test, unique within the producing system.
+  note: >
+    Identity of the `network.test` entity. NOT scoped by a device or observer — the same test is run from many vantage points (agents), each emitting results that carry this id plus their own `network.observer.id`. The agent↔test assignment is reconstructed by querying on this id (membership-by-reference), never modelled as N per-agent test entities. Operator/controller-assigned.
+  examples: ["test-saas-reachability-42", "1234", "voip-london-to-sip"]
+
+- key: network.test.type
+  type:
+    members:
+    - id: latency
+      value: "latency"
+      brief: >
+        Round-trip latency / loss measurement (ICMP, UDP, or TCP). The base reachability test.
+      stability: development
+    - id: jitter
+      value: "jitter"
+      brief: Packet-delay-variation (and often voice/MOS) measurement.
+      stability: development
+    - id: throughput
+      value: "throughput"
+      brief: >
+        Throughput / speed test. `network.io.direction` distinguishes download from upload; `network.transport`/`network.protocol.name` the transport/app protocol.
+      stability: development
+    - id: path
+      value: "path"
+      brief: >
+        Path discovery / traceroute — produces the ordered per-hop result (`network.test.path.hop` record or span tree).
+      stability: development
+    - id: reachability
+      value: "reachability"
+      brief: >
+        Connectivity / availability check, including BGP-route reachability (is prefix P reachable, via which AS path).
+      stability: development
+    - id: voice
+      value: "voice"
+      brief: >
+        Voice / RTP-stream quality measurement (MOS / R-factor / jitter / loss).
+      stability: development
+    - id: dns
+      value: "dns"
+      brief: >
+        DNS resolution test. The network/timing layer is here; the DNS app detail reuses the upstream DNS convention, joined by `network.test.id`.
+      stability: development
+    - id: http
+      value: "http"
+      brief: >
+        HTTP / page-load / API test. The network layer (agent→server latency/loss/path) is here; the L7 result reuses the upstream HTTP / RUM convention, joined by `network.test.id`.
+      stability: development
+  stability: development
+  brief: >
+    The methodology of the active test. Identifies the test family, not its direction or transport — those are `network.io.direction` and `network.transport`.
+  note: >
+    Open enum, lowercase, custom values MAY be used. `dns`/`http` mark tests whose APPLICATION layer is owned by the upstream app conventions (the net/app boundary); this package carries only their network layer.
+
+- key: network.test.target
+  type: string
+  stability: development
+  brief: >
+    The configured target of the test, as the operator specified it (a hostname, URL, IP, or BGP prefix) — before resolution.
+  note: >
+    The human-meaningful target identity, distinct from the resolved `destination.address` a given run measured against (a hostname may resolve to different IPs from different vantages). Entity/descriptive level.
+  examples: ["www.example.com", "https://api.example.com/health", "192.0.2.0/24", "agent-aws-euw1-07"]
+
+- key: network.test.protocol
+  type: string
+  stability: development
+  brief: >
+    The probe protocol/method the test uses (the test's "collection method"), e.g. icmp, udp, tcp, http, dns, bgp, rtp.
+  note: >
+    Open string, lowercase. Distinct from `network.transport` (the L4 transport of a single run) — this is the configured test methodology. Partially overlaps `network.observer.collection.method`; this is the per-test specificity that attribute lacks.
+  examples: ["icmp", "udp", "tcp", "http", "dns", "bgp", "rtp"]
+
+- key: network.test.interval
+  type: int
+  stability: development
+  brief: >
+    The configured execution interval of the test, in seconds.
+  note: >
+    How often the test runs. Entity/descriptive level — a low-cardinality scheduling fact, not a per-result dimension.
+  examples: [60, 300, 900]
+
+- key: network.test.score.type
+  type: string
+  stability: development
+  brief: >
+    The scoring scheme of a `network.test.score` value (e.g. r_factor for the ITU-T G.107 E-model rating).
+  note: >
+    Open string, lowercase. `network.test.mos` (1.0–5.0, ITU-T P.800) is the dedicated MOS metric; `network.test.score` + this attribute carries other voice/quality scores (R-factor 0–100, vendor composite scores) without minting one metric per scheme.
+  examples: ["r_factor", "voice_quality"]
+
+# --- SLA / objective conformance (the assurance-platform central object) ---
+# The test's pass/fail facet. The same SLA-class object the SD-WAN edge needed
+# — shared design, authored here because an assurance platform is
+# organised around tests-and-their-SLAs, and this is where the long-wanted
+# availability/SLO capability becomes an alertable verdict.
+- key: network.test.sla.state
+  type:
+    members:
+    - id: conforming
+      value: "conforming"
+      brief: The test is currently meeting its SLA objective.
+      stability: development
+    - id: violating
+      value: "violating"
+      brief: The test is currently breaching its SLA objective.
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: SLA conformance cannot be determined (e.g. no recent result).
+      stability: development
+  stability: development
+  brief: >
+    Whether the test currently conforms to its configured SLA objective — the normalized verdict an assurance platform alerts on.
+  note: >
+    The normalized-state half of the SLA facet (the `network.neighbor.state` discipline). The transition to `violating` is the `network.test.degraded` alarm; the objective itself is `network.test.sla.objective`. Carried on the `network.test` entity and as a low-cardinality dimension where an SLA-conformance gauge is emitted.
+
+- key: network.test.sla.objective
+  type: string
+  stability: development
+  brief: >
+    A human-readable statement of the test's SLA objective (the threshold set the conformance verdict is evaluated against).
+  note: >
+    Descriptive text, e.g. "loss < 1% AND latency_p95 < 50ms". The machine-comparable threshold + observed value for a specific breach ride the `network.alarm.threshold.value`/`observed.value` slots on the `network.test.degraded` event. Kept as a string here to avoid prematurely modelling a full constraint grammar.
+  examples: ["loss < 0.01 and latency_p95 < 0.05", "availability >= 0.999"]
+
+# --- Run-record detail (on network.test.executed; bounded per run) ---------
+- key: network.test.duration
+  type: double
+  stability: development
+  brief: >
+    The wall-clock duration of the test run, in seconds.
+  examples: [5.0, 30.0]
+
+- key: network.test.samples.sent
+  type: int
+  stability: development
+  brief: >
+    Number of probe samples (packets/requests) sent during the run.
+  examples: [100, 600]
+
+- key: network.test.samples.received
+  type: int
+  stability: development
+  brief: >
+    Number of probe samples successfully received/answered during the run.
+  examples: [98, 595]
+
+- key: network.test.bytes
+  type: int
+  stability: development
+  brief: >
+    Total bytes transferred during a throughput run (excluding warmup).
+  examples: [85571315]
+
+- key: network.test.warmup.bytes
+  type: int
+  stability: development
+  brief: >
+    Bytes transferred during the warmup phase of a throughput run.
+  examples: [1024000]
+
+- key: network.test.warmup.duration
+  type: double
+  stability: development
+  brief: >
+    Warmup-phase duration of a throughput run, in seconds.
+  examples: [0.5]
+
+- key: network.test.threads
+  type: int
+  stability: development
+  brief: >
+    Number of parallel streams/threads used by a throughput run.
+  examples: [4, 8]
+
+- key: network.test.tcp.retransmissions
+  type: int
+  stability: development
+  brief: >
+    TCP retransmissions observed during a TCP-based throughput run.
+  examples: [0, 12]
+
+# --- Path (traceroute) result — per-hop, carrier-dual ------------
+# The path result is an ordered, timed, per-hop sequence. Its attribute set is
+# defined ONCE and carried as EITHER a per-hop RECORD (network.test.path.hop
+# Event, the floor) OR a SPAN tree (one trace per run, a span per hop).
+# Correlated by network.test.path.id + network.test.path.hop.index (the
+# membership-by-reference idiom: network.path / network.link). A path is the
+# active domain's equivalent of the flow record/span, and "where did the
+# latency/loss enter the path" is the #1 question a traceroute answers.
+- key: network.test.path.id
+  type: string
+  stability: development
+  brief: >
+    Identifier correlating all hop records/spans of one path/traceroute result.
+  note: >
+    Groups the ordered `network.test.path.hop` observations of a single path run (one per measured hop). Scoped to the run; pairs with `network.test.id` (the configured test) and `network.observer.id` (the vantage). The membership-by-reference key that reconstructs the whole ordered traversal from a query (record carrier) or becomes the trace id (span carrier).
+  examples: ["path-7f3a91", "1234-run-08291"]
+
+- key: network.test.path.hop.index
+  type: int
+  stability: development
+  brief: >
+    The position of this hop in the path (its TTL / distance from the agent).
+  note: >
+    The ordering key within a `network.test.path.id`. Corresponds to the traceroute TTL. Record/span-level only.
+  examples: [1, 2, 7]
+
+- key: network.test.path.hop.latency
+  type: double
+  stability: development
+  brief: >
+    The latency (round-trip time) to this hop, in seconds.
+  note: >
+    The per-hop latency a path/traceroute test reports. The jump in this value between consecutive hops localises where latency enters the path. Record/span-level (on a span carrier this is the span duration plus this explicit measure).
+  examples: [0.0012, 0.0204]
+
+- key: network.test.path.hop.loss.ratio
+  type: double
+  stability: development
+  brief: >
+    The packet-loss ratio observed at this hop (0.0–1.0).
+  note: >
+    Per-hop loss; a step-up between hops localises where loss enters the path. Record/span-level.
+  examples: [0.0, 0.02]
+
+# NOTE: the per-hop SUBJECT enrichment (the hop IP, its reverse-DNS hostname, its
+# AS number/name, its CIDR prefix) is NOT minted here. A traceroute hop is an
+# intermediate DESTINATION the agent measured toward — third-party-observed
+# traffic — so it reuses the observed-endpoint vocabulary in model/destination:
+#   destination.address           — the hop IP
+#   destination.hostname          — the hop's reverse-DNS name
+#   destination.as.number / .name — the AS owning the hop (semconv #3740)
+#   destination.address.prefix    — the hop's CIDR aggregate
+# This avoids overloading the connection-scoped, Stable `network.peer.*` (the
+# same discipline model/neighbor follows) and keeps the test package aligned
+# with the network.flow records, which reuse the identical endpoint set.

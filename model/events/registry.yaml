@@ -1,352 +1,70 @@
 ---
 file_format: definition/2
 
-# network-events — the shared event envelope (the deferred "events package"
-# every domain points at). Two base events, discriminated by low-cardinality
-# REGISTERED enums, optionally specialized per-domain via `event_refinements`.
-# We deliberately do NOT mint one event per transition/condition (the
-# proliferation trap):
+# =============================================================================
+# entity-events machinery — the entity lifecycle/topology carrier.
+# -----------------------------------------------------------------------------
+# This directory mirrors the merged OpenTelemetry **entity-events** data model
+# (opentelemetry-specification #4836: runtime `entity.state` / `entity.delete`
+# log events carrying `entity.relationships`). The events themselves are a
+# settled direction upstream, but upstream semconv does NOT yet ship an
+# *authorable* model for them — so events.yaml carries
+# named placeholder stubs and this file defines the one piece that is genuinely
+# ours: the network **relationship-type vocabulary**.
 #
-#   - network.state.changed  — the state-transition envelope (one event).
-#   - network.alarm          — the alarm/condition envelope (one event;
-#                              raised/cleared via perceived severity).
+# The interim per-entity `*.info` projection metrics that previously lived here
+# have moved to their domain packages (network.device.info ->
+# model/network/device/metrics.yaml; network.interface.info ->
+# model/network/interface/metrics.yaml) and are first-class metrics there.
+# They are NOT assumed to be superseded by an automatic entity -> info metric
+# projection — that projection is speculative and is not relied on here.
 #
-# ANCHOR (modern, network-native): IETF **RFC 8632** (A YANG Data Model for
-# Alarm Management) — the current, extensible form of operational alarms — and
-# **TMF642** (Alarm Management) / TMF688 (Event Management) on the OSS side.
-# RFC 8632 deliberately replaced X.733's *fixed* probable-cause / event-type
-# lists with **extensible identities**, which is exactly our open-enum approach.
-# ITU-T **X.733** (alarm reporting), **X.731** (state management) and
-# **X.736** (security alarms) are cited as the ORIGIN of these concepts, not as
-# a spec we transcribe — the same "take the concepts, render them
-# OTel-idiomatically" stance the repo took for hw.* vs ENTITY-MIB.
-# Across all of them the notification is a fixed envelope
-# keyed by resource + cause + severity + state-from/to — never a catalogue of
-# bespoke event types.
-#
-# Aligned with the OTel events direction: an event is a LogRecord identified by
-# a namespaced `event.name`; detail rides in ATTRIBUTES; `body` is reserved for
-# a human-readable display string only. Same model as an RFC 8632 / X.733
-# notification, so we lean into it.
-#
-# See docs/conventions.md (events).
-#
-# OUT OF SCOPE (the consuming alarm/NMS system's job, like AAA usage records and
-# flow correlation are elsewhere): alarm LIFECYCLE — acknowledgement, clear
-# correlation, shelving, root-cause, operator-state (RFC 8632's
-# alarm-management / TMF642 operator-facing half). We emit the alarm
-# NOTIFICATION; we do not reimplement alarm management. Observation RECORDS
-# (network.flow, the session-close record, the per-subscriber usage record,
-# MAC-move/learn) are a separate category (D6) and stay with their domains;
-# they are not state/alarm events.
+# Everything here is `development`. Replace the placeholder events.yaml stubs
+# when upstream ships an authorable entity-events model.
+# =============================================================================
 
 attributes:
-# === State-change envelope (X.731 origin; RFC 8632 §operator-state lineage) =
-- key: network.event.state.dimension
-  type:
-    members:
-    - id: operational
-      value: "operational"
-      brief: >
-        The operational state (enabled/disabled) — the run-time up/down of the object (link up/down, adjacency established/lost, ONU online/offline). The default and most common dimension.
-      stability: development
-    - id: administrative
-      value: "administrative"
-      brief: >
-        The administrative state (locked/unlocked/shuttingDown) — an operator-driven transition (interface shut/no-shut, admin disable). Distinguishes an intended change from a fault.
-      stability: development
-    - id: usage
-      value: "usage"
-      brief: >
-        The usage state (idle/active/busy) — a utilisation-driven transition. Rarely emitted as an event; included for completeness.
-      stability: development
-  stability: development
-  brief: >
-    Which state dimension transitioned (the three orthogonal X.731 states). Lets one event distinguish a fault (operational) from an operator action (administrative).
-  note: >
-    Defaults to `operational` when absent. The three orthogonal state dimensions are why a device can be administratively `unlocked` yet operationally `disabled` (a fault) — collapsing them loses the "intended vs failure" signal NMS systems route on. (IF-MIB encodes the same split as ifAdminStatus vs ifOperStatus.)
-
-- key: network.event.state.previous
+- key: network.relationship.type
   type: string
   stability: development
   brief: >
-    The verbatim native state the object transitioned FROM (e.g. "Established", "up", "Full", "online", "Collecting_Distributing").
-  note: >
-    The native/verbatim value, consistent with the project's normalized+native pattern (Principle 10). The coarse normalized value of the new state is carried by the entity's own current-state gauge; the event records the verbatim transition endpoints so the precise native term is never lost.
-  examples: ["Established", "up", "Full", "online"]
-
-- key: network.event.state.current
-  type: string
-  stability: development
-  brief: >
-    The verbatim native state the object transitioned TO.
-  examples: ["Idle", "down", "Down", "offline"]
-
-# === Alarm envelope (RFC 8632 anchor; X.733/X.736 origin) ==================
-- key: network.alarm.cause
-  type:
-    members:
-    - id: threshold_crossed
-      value: "threshold_crossed"
-      brief: >
-        A monitored value crossed a configured warn/alarm threshold (optical/RF DOM, congestion, utilisation). Carry the threshold + observed values.
-      stability: development
-    - id: table_exhausted
-      value: "table_exhausted"
-      brief: >
-        A finite forwarding/state table reached capacity (session table, address pool, MAC/FDB limit, TCAM/FIB). The single biggest silent-outage family across the scenarios.
-      stability: development
-    - id: signal_loss
-      value: "signal_loss"
-      brief: >
-        Loss of the underlying signal (optical LOS, PON dying-gasp/LOSi, carrier loss, DFS radar forcing a channel vacate).
-      stability: development
-    - id: power_failure
-      value: "power_failure"
-      brief: A power/PSU/PoE fault or loss.
-      stability: development
-    - id: connectivity_lost
-      value: "connectivity_lost"
-      brief: >
-        Loss of a peer/path/adjacency at the network layer (LSP down, BFD/peer-link down, protection switch).
-      stability: development
-    - id: redundancy_lost
-      value: "redundancy_lost"
-      brief: >
-        A redundancy/HA condition (failover, split-brain, below-min-links, DF re-election, RP switchover).
-      stability: development
-    - id: configuration_error
-      value: "configuration_error"
-      brief: A misconfiguration/mismatch detected at run time.
-      stability: development
-    - id: service_unreachable
-      value: "service_unreachable"
-      brief: >
-        A required external service is unreachable (AAA/RADIUS, DHCP, DNS, NTP) — onboarding/operation impaired.
-      stability: development
-  stability: development
-  brief: >
-    The probable cause of the alarm — the PRIMARY discriminator. An OPEN enum with a registered well-known value set: values normalized to lowercase, custom values MAY be used. New conditions add a value here, NOT a new event.
-  note: >
-    The RFC 8632 alarm-type identity / X.733 "probable cause", rendered as an extensible enum rather than a fixed list (RFC 8632 abandoned X.733's fixed probable-cause registry precisely because it proved too rigid). Kept deliberately coarse and reusable; device-/vendor-specific detail goes in `network.alarm.specific_problem`. This is the single curated surface that grows as new conditions are discovered across domains.
-
-- key: network.alarm.severity
-  type:
-    members:
-    - id: cleared
-      value: "cleared"
-      brief: >
-        The alarm is no longer present. `cleared` IS the clear notification for a previously-raised alarm of the same cause on the same resource (the X.733 / RFC 8632 severity-as-clear model). Clear CORRELATION is the consuming alarm system's job — out of scope here.
-      stability: development
-    - id: indeterminate
-      value: "indeterminate"
-      brief: Severity could not be determined.
-      stability: development
-    - id: warning
-      value: "warning"
-      brief: Warning severity.
-      stability: development
-    - id: minor
-      value: "minor"
-      brief: Minor severity.
-      stability: development
-    - id: major
-      value: "major"
-      brief: Major severity.
-      stability: development
-    - id: critical
-      value: "critical"
-      brief: Critical severity.
-      stability: development
-  stability: development
-  brief: >
-    The perceived severity. The six values are common ground across RFC 8632 and X.733 (identical set), so they are adopted verbatim. `cleared` doubles as the clear notification.
-
-- key: network.alarm.specific_problem
-  type: string
-  stability: development
-  brief: >
-    The verbatim device-/vendor-specific problem string, refining the coarse `network.alarm.cause` (the X.733 "specific problem" / RFC 8632 alarm-type-qualifier).
-  examples: ["session table full", "Rx power low-alarm", "DFS radar detected on channel 52"]
-
-- key: network.alarm.category
-  type:
-    members:
-    - id: communications
-      value: "communications"
-      brief: A fault in conveying information (link/adjacency/LSP down, LOS).
-      stability: development
-    - id: equipment
-      value: "equipment"
-      brief: A hardware/equipment fault.
-      stability: development
-    - id: environmental
-      value: "environmental"
-      brief: A condition in the surroundings (temperature, power, fan).
-      stability: development
-    - id: quality_of_service
-      value: "quality_of_service"
-      brief: A degradation against an expected QoS bound (threshold, SLA, congestion).
-      stability: development
-    - id: processing_error
-      value: "processing_error"
-      brief: A software/processing fault (table exhaustion, resource limit).
-      stability: development
-    - id: security
-      value: "security"
-      brief: >
-        A security alarm (the X.736 security-alarm family — integrity / operational / physical / mechanism / time-domain violation, kept as one coarse value rather than five).
-      stability: development
-  stability: development
-  brief: >
-    OPTIONAL coarse classification (the X.733 §A.2 / X.736 event-type categories, collapsed). Secondary to `network.alarm.cause`.
-  note: >
-    Demoted on purpose: RFC 8632 does NOT mandate the fixed X.733 category list (it uses extensible alarm-type identities instead), and `cause` already carries the actionable discriminator. Provided opt-in for consumers that bucket alarms the classic ITU way; the five X.736 security categories are folded into a single `security` value rather than transcribed.
-
-- key: network.alarm.threshold.value
-  type: double
-  stability: development
-  brief: >
-    For `threshold_crossed`: the configured threshold that was crossed, in the monitored value's own unit.
-
-- key: network.alarm.observed.value
-  type: double
-  stability: development
-  brief: >
-    For `threshold_crossed`: the observed value that crossed the threshold, in the monitored value's own unit.
-
-# === Shared envelope fields ===========================================
-- key: network.event.message
-  type: string
-  stability: development
-  brief: >
-    Optional human-readable display text for the event. Maps to the OTel event `body` display-string allowance — it MUST NOT carry structured data that belongs in attributes.
-  examples: ["BGP session to 192.0.2.1 went from Established to Idle"]
-
-- key: network.event.correlation.id
-  type: string
-  stability: development
-  brief: >
-    An optional producer-assigned id linking related events (e.g. a raise/clear pair, or events from one root incident). Carrying the id is in scope; correlation/root-cause LOGIC is the consumer's job.
-
-# === Locator-move record fields (RFC 7432 mobility) ====================
-# The shared fields of the third-category MOVE record (network.attachment.moved):
-# an identifier changed its point of attachment. The moved IDENTIFIER and the
-# PREVIOUS/CURRENT locator are supplied as TYPED keys by each refinement (a
-# MAC, an IP, a station-MAC are different attributes, never one stringly-typed
-# field — the cardinality firewall). These two fields are what RFC
-# 7432 §7.7/§15 adds over a bare from/to pair and what make a move ACTIONABLE.
-- key: network.attachment.sequence
-  type: int
-  stability: development
-  brief: >
-    The mobility SEQUENCE NUMBER of the move (RFC 7432 §7.7) — a per-identifier monotonic counter incremented on each move. Distinguishes a first clean move (1) from a repeatedly-moving identifier (47), the input to flap detection.
-  note: >
-    For EVPN this is the literal MAC Mobility extended-community sequence number; for other domains it is the producer's equivalent move counter. Record-level metadata only — MUST NOT be a metric dimension.
-
-- key: network.attachment.duplicate
-  type: boolean
-  stability: development
-  brief: >
-    Whether the identifier is FLAPPING — it moved back and forth beyond the configured move-count/interval (RFC 7432 §15 MAC duplication). `true` marks a loop / duplicate-address / spoof, NOT a clean roam — the single most useful derived bit on the record.
-  note: >
-    The RFC 7432 duplicate-MAC detection result, generalized to any moved identifier. A consumer alerts on `duplicate=true`; a clean host roam is `false`. Record-level metadata only.
-
-events:
-- name: network.state.changed
-  stability: development
-  brief: >
-    A network object transitioned between states (the X.731 state-change envelope). ONE event for every entity's transitions — interface up/down, adjacency up/down (all protocols), STP port-state, ONU online/offline, session lifecycle, LAG member, link discovered/lost, DF change, failover. A domain MAY emit this generic event directly, or emit a per-domain specialization (an `event_refinement`, e.g. network.interface.state.changed) that inherits this whole envelope.
-  note: >
-    Pairs with the entity's current-state GAUGE (the enum-as-attribute `status.phase` pattern), which is what survives a collector restart; this event is the point-in-time transition the gauge cannot reconstruct.
-  attributes:
-  - ref: network.event.state.current
-    requirement_level: required
-  - ref: network.event.state.previous
-    requirement_level: recommended
-  - ref: network.event.state.dimension
-    requirement_level: recommended
-  - ref: network.alarm.cause
-    requirement_level: opt_in
-  - ref: network.event.message
-    requirement_level: opt_in
-  - ref: network.event.correlation.id
-    requirement_level: opt_in
-  # The generic base event applies to any stateful object. Listing the common
-  # entity types keeps it directly emittable for domains that do not need a
-  # specific refined name (the low floor); domains wanting a routed-by-name
-  # event add an `event_refinement` that resolves to its own name inheriting
-  # this envelope.
-  entity_associations:
-  - network.interface
-  - network.neighbor
-  - network.link
-  - network.device
-
-- name: network.alarm
-  stability: development
-  brief: >
-    An alarm/condition was raised or cleared (the RFC 8632 / X.733 alarm envelope). ONE event for every alarm — table/pool exhaustion, optical/RF threshold crossings, LOS/dying-gasp, DFS radar, split-brain, LSP-down, SLA violation, AAA-unreachable. The specific condition lives in the `cause`/`severity` enums (and an optional per-domain refinement), never in a bespoke event name.
-  note: >
-    Raised vs cleared is carried by `network.alarm.severity` (the severity-as-clear model). Alarm LIFECYCLE — ack, clear correlation, shelving, root-cause — is the consuming alarm system's responsibility (RFC 8632 alarm-management / TMF642) and is explicitly out of scope.
-  attributes:
-  - ref: network.alarm.severity
-    requirement_level: required
-  - ref: network.alarm.cause
-    requirement_level: required
-  - ref: network.alarm.specific_problem
-    requirement_level: recommended
-  - ref: network.alarm.category
-    requirement_level: opt_in
-  - ref: network.alarm.threshold.value
-    requirement_level: opt_in
-  - ref: network.alarm.observed.value
-    requirement_level: opt_in
-  - ref: network.event.correlation.id
-    requirement_level: opt_in
-  - ref: network.event.message
-    requirement_level: opt_in
-  # Generic alarm event; common holders listed. Specific named alarms (e.g.
-  # network.session.table_exhausted) are added as refinements.
-  entity_associations:
-  - network.device
-  - network.interface
-  - network.optical.channel
-
-- name: network.attachment.moved
-  stability: development
-  brief: >
-    An identifier changed its point of attachment — a MAC moved port, a MAC/VM moved Ethernet Segment, a station roamed BSS. The base of the third event category (the observation RECORD): NOT a state-change or alarm (nothing about a durable entity's state transitioned), but a point-in-time observation carrying per-object identity (the moved identifier + its previous/current locator).
+    The type of a directional relationship between two network entities, carried in an `entity.state` event's `entity.relationships[]` array (NOT a Resource attribute — "Resource data cannot contain relationship information", spec #4836). A loose string with well-known suggested values below; custom values MAY be used, and generic upstream types (e.g. `depends_on`) MAY also apply.
   note: |
-    The record-category base, the record-shaped sibling of
-    `network.state.changed` / `network.alarm` (it does NOT make a third
-    ENVELOPE; a move is explicitly not a state/alarm).
-    Anchored on RFC 7432 §7.7 (MAC Mobility) + §15 (MAC Duplication): the move
-    carries a `network.attachment.sequence` and a `network.attachment.duplicate`
-    flag, the two fields that distinguish a clean roam from a flapping
-    loop/spoof. Concept-origin: the ID/locator split (LISP RFC 9300/9301,
-    Mobile IPv6 RFC 6275) — "the (identifier → locator) binding changed."
+    Direction is source -> target, where the source is the entity emitting
+    the `entity.state` event. Placement follows the spec: the relationship is
+    emitted on the higher-churn / shorter-lifespan entity.
 
-    A domain emits a per-domain refinement (e.g. `network.l2.mac.moved`,
-    `network.evpn.mac.moved`, `network.wifi.station.roamed`) that supplies the
-    TYPED identifier + previous/current locator keys (a MAC, a station-MAC, an
-    IP are different attributes) and inherits these shared
-    sequence/duplicate fields. Bulk learn/age are NOT moves (the per-MAC
-    firehose) — only the move is recorded.
-  attributes:
-  - ref: network.attachment.sequence
-    requirement_level: recommended
-  - ref: network.attachment.duplicate
-    requirement_level: recommended
-  - ref: network.event.correlation.id
-    requirement_level: opt_in
-  - ref: network.event.message
-    requirement_level: opt_in
-  # The record-category base. Common move contexts listed; domains supplying a
-  # typed identifier/locator add an `event_refinement` that resolves to its own
-  # name inheriting these fields.
-  entity_associations:
-  - network.vlan
-  - network.instance
-  - network.device
+    A free-form string (not a closed enum): the entity-relationship authoring
+    surface in Weaver is still emerging, and the vocabulary is expected to
+    grow as new entity pairings are modelled. The well-known values below are
+    the network vocabulary the Networking WG (#3769) curates and supplies for
+    the generic upstream `relationship.type` field; treat them as the
+    recommended set, not an exhaustive one.
 
+    Well-known suggested values:
+      - `contains`      — the source contains the target as a part
+                          (source -> target, parent -> child): a device contains
+                          an interface; an interface contains a sub-interface
+                          (FK: network.interface.parent.name).
+      - `layered_over`  — the source runs on top of / is encapsulated over the
+                          target lower-layer entity (FK:
+                          network.interface.lower_layer.name; a tunnel over its
+                          underlay instance).
+      - `member_of`     — the source is a member of the target aggregate (FK: a
+                          member interface -> its network.lag bundle).
+      - `connected_to`  — the source is physically/logically connected to the
+                          target (an L1/L2 adjacency discovered by LLDP/CDP; FK:
+                          network.link local/remote endpoints). Conceptually
+                          two-ended.
+      - `adjacent_to`   — the source forms a control-plane adjacency with the
+                          target (IGP / LLDP neighbour; FK: network.neighbor).
+      - `peers_with`    — the source establishes a peering session with the
+                          target (BGP and other session-based protocols; FK:
+                          network.neighbor with a session).
+      - `next_hop`      — the source forwards toward the target as a next hop (a
+                          route's resolved next-hop interface/neighbour).
+
+    This attribute is the authorable-NOW deliverable: it is carried as event
+    payload today even though a first-class entity -> entity `relationships:`
+    authoring field does not yet exist in Weaver.
+  examples: ["contains", "layered_over", "member_of", "connected_to", "adjacent_to", "peers_with", "next_hop"]

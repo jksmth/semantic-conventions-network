@@ -71,7 +71,7 @@ graph TD
     VL10["network.vlan 10"]
     VL20["network.vlan 20"]
     VL30["network.vlan 30"]
-    MAC["network.l2.mac.entries<br/>→ network.vlan (per-VLAN)"]
+    MAC["network.l2.fdb.entry.count<br/>→ network.vlan (per-VLAN)"]
 
     STP["network.stp.instance<br/>mode=mstp · bridge.id · root.id · is_root"]
     MST1["MST1 vlans=[10,20]"]
@@ -214,8 +214,8 @@ synthetic `l2vsi` instance is needed for flat 802.1Q switching (see
 | `network.*` | SNMP | OpenConfig |
 |-------------|------|------------|
 | `network.vlan` 10 / 20 / 30 / 1000 *(scoped by device)* | `dot1qVlanStaticTable` (Q-BRIDGE-MIB) | `/network-instances/.../vlans/vlan` |
-| `network.vlan.mac_limit` *(per-VLAN limit)* | vendor MIB | vendor ext |
-| `network.l2.mac.entries` → `network.vlan` (`entry.type` ∈ dynamic/static/control_plane) | `dot1qTpFdbTable` (Q-BRIDGE-MIB) | `/network-instances/.../fdb/mac-table/entries` |
+| `network.vlan.fdb.limit` *(per-VLAN limit)* | vendor MIB | vendor ext |
+| `network.l2.fdb.entry.count` → `network.vlan` (`entry.type` ∈ dynamic/static/control_plane) | `dot1qTpFdbTable` (Q-BRIDGE-MIB) | `/network-instances/.../fdb/mac-table/entries` |
 | `network.component.utilization` `resource=mac_table` *(fill %)* | vendor FDB-capacity MIB | `/components/component/.../utilization` |
 
 MAC *learn / age* are deliberately **not** events (a per-MAC firehose) — the
@@ -281,6 +281,41 @@ The `type=lag` interface `ae0` carries the usual `network.interface.{io,packets,
 counters (speed = sum of members); per-member counters stay on each member's own
 interface.
 
+### 7.1 LACP operational statistics
+
+The PDU counters, the actor/partner oper-state octet, and the churn machine are the
+LACP *health* layer — emitted **per member port** (each member runs its own LACP
+state machine against the partner across that physical link). They are
+**neighbour-scoped**: each counter has exactly one identifiable partner, which is
+already the `network.neighbor` `protocol=lacp` above. So — unlike LLDP, whose stats
+have no identifiable neighbour and earn their own `network.lldp.*` namespace — LACP
+reuses the **generic** control-plane counters, with no new metric names.
+
+| `network.*` | IEEE 802.1AX YANG (`ieee802-dot1ax`) | SNMP (IEEE8023-LAG-MIB) | OpenConfig |
+|-------------|--------------------------------------|-------------------------|------------|
+| `network.protocol.messages` `protocol=lacp` `message.type=lacpdu` + `network.io.direction` | `aggregation-port-stats/lacp-pdu-{rx,tx}` | `dot3adAggPortStatsLACPDUs{Rx,Tx}` | `.../members/member/state/counters/lacp-{in,out}-pkts` |
+| `network.protocol.messages` `message.type=marker` | `.../marker-pdu-{rx,tx}` | `dot3adAggPortStatsMarkerPDUs*` | `.../lacp-{in,out}-pkts` (marker) |
+| `network.protocol.messages` `message.type=marker_response` | `.../marker-response-pdu-{rx,tx}` | `dot3adAggPortStatsMarkerResponsePDUs*` | `.../lacp-{in,out}-pkts` (marker-resp) |
+| `network.protocol.errors` `protocol=lacp` `error.type=unknown` | `aggregation-port-stats/unknown-rx` | `dot3adAggPortStatsUnknownRx` | `.../state/counters/lacp-unknown-errors` |
+| `network.protocol.errors` `error.type=illegal` | `.../illegal-rx` | `dot3adAggPortStatsIllegalRx` | `.../state/counters/lacp-errors` |
+| `network.neighbor.lacp.state` *(per-flag StateSet)* `role` + `state.flag` | `actor-oper-state` / `partner-oper-state` | `dot3adAggPortActorOperState` / `PartnerOperState` | `.../members/member/state` (activity/timeout/synchronization/collecting/distributing/…) |
+| `network.neighbor.lacp.churn` `role` | debug churn group | `dot3adAggPortDebug{Actor,Partner}ChurnCount` | `.../members/member/state` (churn) |
+
+The 802.1AX oper-state is an **octet of independent flags** (activity, timeout,
+aggregation, synchronization, collecting, distributing, defaulted, expired), so it
+is decomposed into a per-flag StateSet (one value-1 series per set flag) rather than
+a packed integer — the same treatment as `system.network.interface.status`, and what
+makes "show members where `collecting=false`" a label filter. The coarse partner
+up/down is the existing `network.neighbor.state` (`Collecting_Distributing`→`up`,
+`Detached`→`down`); these flags are the diagnostic layer beneath it, and `churn` is
+the convergence-failure signal distinct from `network.neighbor.state_changes`.
+
+The deeper per-member partner detail (partner system-id + port + key + the full mux
+FSM) is further `network.neighbor` (`protocol=lacp`) refinement, not yet authored —
+LACP is adjacency-shaped, so it stays on the neighbour (the `network-session` package
+is for connection/IPsec-SA tables and explicitly excludes adjacency sessions). See
+[§11](#11-what-this-switch-does-not-emit).
+
 ---
 
 ## 8. Optics on the LAG members
@@ -290,7 +325,7 @@ The 10G SFP+ on each member maps exactly as the
 `network.optical.channel` with `interface.id = xe-0`, `network.optical.power` /
 `bias_current`; module temperature / voltage / status in `hw.*`. The member→bundle
 correlation ("which member's optic is failing?") is answerable via
-`network.lag.members[]` and `network.interface.lower_layer.id[]`.
+`network.lag.members[]` and `network.interface.lower_layer.name[]`.
 
 ---
 
@@ -324,7 +359,7 @@ The switch's defining traps all have authored homes. Events refine the
 | STP topology / root change | `network.stp.topology.changed` |
 | STP port forwarding ↔ blocking | `network.stp.port.state.changed` |
 | MAC move | `network.l2.mac.moved` *(record: mac + old/new port + VLAN)* |
-| MAC-limit exceeded | `network.l2.mac_limit.exceeded` *(alarm, `cause=table_exhausted`)* |
+| MAC-limit exceeded | `network.l2.fdb.limit_exceeded` *(alarm, `cause=table_exhausted`)* |
 | LAG member up/down | `network.interface.state.changed` on the member port |
 | LAG below min-links | `network.alarm` (`cause=redundancy_lost`) |
 | PoE port denied / fault | `network.alarm` (`cause=power_failure`) — the `poe.state` `denied`/`fault` transition |
@@ -344,4 +379,7 @@ The switch's defining traps all have authored homes. Events refine the
 - **No routing / BGP** — this is a pure L2 device (contrast the
   [CPE example](../cpe-router/README.md#5-wan-routing--the-bgp-session)).
 - **Deferred:** selective QinQ (C-VLAN→S-VLAN map), 802.1ah backbone tags, and the
-  deep per-member LACP partner session (actor/partner port/key/mux FSM).
+  deeper per-member LACP partner detail (partner system-id/port/key + the full mux
+  FSM) — a not-yet-authored `network.neighbor` (`protocol=lacp`) refinement, since
+  LACP is adjacency-shaped (the `network-session` package owns connection/IPsec-SA
+  tables, not adjacency sessions).

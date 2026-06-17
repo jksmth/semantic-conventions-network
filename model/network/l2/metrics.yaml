@@ -1,0 +1,101 @@
+---
+file_format: definition/2
+metrics:
+- name: network.l2.fdb.entry.count
+  stability: development
+  brief: >
+    Number of MAC forwarding entries currently present.
+  note: |
+    This metric associates with BOTH `network.vlan` and
+    `network.instance`:
+
+    - On a flat 802.1Q switch (no explicit bridging context), report
+      per-VLAN occupancy by associating with `network.vlan`. The VLAN
+      is the L2 forwarding context.
+    - On a device with explicit L2 bridging contexts (VPLS, EVPN
+      MAC-VRF), report per-instance occupancy by associating with
+      `network.instance` (type `l2vsi` or `l2l3`).
+    See docs/entity-model.md (network.instance vs network.vlan).
+
+    Sum across `network.l2.fdb.entry.type` gives total occupancy.
+    The configured ceiling, when set, is `network.vlan.fdb.limit` (per-VLAN)
+    or `network.instance.fdb.limit` (per bridging instance);
+    breaching it raises `network.l2.fdb.limit_exceeded`.
+  instrument: updowncounter
+  unit: "{entry}"
+  attributes:
+  - ref: network.l2.fdb.entry.type
+    requirement_level: recommended
+  entity_associations:
+  - network.vlan
+  - network.instance
+
+- name: network.l2.fdb.entry.discards
+  stability: development
+  brief: >
+    MAC forwarding entries discarded because the forwarding database was full.
+  note: |
+    Monotonically increasing counter of entries that would have been learned
+    but were discarded for lack of space in the forwarding database — the
+    standard BRIDGE-MIB `dot1dTpLearnedEntryDiscards` "MAC table full /
+    churning" health signal. A persistently rising value means the table is at
+    capacity and forwarding may flood.
+
+    Distinct from the steady-state occupancy (`network.l2.fdb.entry.count`) and the
+    forwarding-resource ceiling (`network.component.utilization`
+    `resource=mac_table`): this is the rate at which learning is actively being
+    dropped, the leading indicator before `network.l2.fdb.limit_exceeded` fires.
+    `network.interface.name` narrows the discards to a bridge port where the
+    device reports them per-port; `network.vlan` / `network.instance` narrow to
+    a forwarding context.
+  instrument: counter
+  unit: "{entry}"
+  attributes:
+  - ref: network.interface.name
+    requirement_level: opt_in
+  - ref: network.vlan.id
+    requirement_level: opt_in
+  entity_associations:
+  - network.device
+  - network.vlan
+  - network.instance
+
+- name: network.l2.mac.status
+  stability: development
+  brief: >
+    Presence/lookup status of a specific MAC address in the forwarding database (status metric — UpDownCounter, the K8s status.phase pattern).
+  note: |
+    A lookup-style status signal, NOT a passive table export: emit one series
+    per MAC address you are explicitly watching, value 1 for its current
+    `network.l2.mac.state` (the OTel status-metrics guide / K8s `status.phase`
+    pattern). The canonical use is "is the expected CPE/host MAC X currently
+    learned on this VLAN" — the L2 analogue of an active reachability probe.
+
+    CARDINALITY: this is the one MAC-keyed metric in the package, and it is
+    safe ONLY because it is a targeted lookup over a bounded watch-list. It
+    MUST NOT be used to project the whole forwarding table (that is
+    `network.l2.fdb.entry.count`, an occupancy gauge with no MAC dimension). Emit
+    it only for a deliberately small, operator-defined set of addresses; the
+    emitter owns that discipline (the cardinality firewall).
+
+    The MAC is entity-agnostic — consumers join on the address to resolve which
+    entity (CPE, host, interface) owns it. The FDB does not distinguish device
+    MAC from interface MAC; it records whichever source MAC was seen on the
+    wire. Normalise to IEEE RA hexadecimal form — hyphen-separated octets,
+    uppercase (e.g. 00-1B-21-3C-4D-5E) — matching `network.l2.mac.address` /
+    `host.mac` / `hw.network.physical_address`.
+  instrument: updowncounter
+  unit: "1"
+  attributes:
+  - ref: network.l2.mac.state
+    requirement_level: required
+  - ref: network.l2.mac.address
+    requirement_level: required
+  - ref: network.interface.name
+    requirement_level: opt_in
+  - ref: network.vlan.id
+    requirement_level: opt_in
+  entity_associations:
+  - network.device
+  - network.vlan
+  - network.instance

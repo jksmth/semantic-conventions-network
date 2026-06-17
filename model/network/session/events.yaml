@@ -1,0 +1,80 @@
+---
+file_format: definition/2
+
+# PROTOTYPE refinement (events-envelope design).
+# The session domain specializes the shared `network.alarm` base event for the
+# session/connection-table-exhausted alarm (the #1 firewall outage
+# mode). Per the validated Weaver behavior, an event refinement resolves to its
+# OWN event.name (= this id) inheriting the base envelope's attributes; the
+# discriminator is `network.alarm.cause=table_exhausted`. Associates with
+# `network.device` (the NF that holds the table — the session is not an entity).
+event_refinements:
+- id: network.session.table_exhausted
+  ref: network.alarm
+  stability: development
+  brief: >
+    The stateful session/connection table reached its capacity ceiling — the raised/cleared alarm complementing the `network.session.count` occupancy gauge and the `network.component.utilization` (session_table) ceiling.
+  note: >
+    Emitted with `network.alarm.cause=table_exhausted` and (optionally) `network.alarm.category=processing_error`. A SYN flood filling the table while CPU looks idle is the canonical case. Per-session 5-tuple/reason belong on the `network.session.closed` record, never on this alarm.
+  entity_associations:
+  - network.device
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: Always `table_exhausted` for this refinement.
+  - ref: network.alarm.category
+    requirement_level: opt_in
+    note: Normally `processing_error` (a resource-limit fault).
+
+# The per-session close RECORD (the third event category — NOT a
+# state/alarm). The session-at-close half of the open/close pair the registry
+# header describes: the firewall/conntrack log line written when a connection
+# or SA leaves the table. It carries the high-cardinality per-session identity
+# the aggregate metrics (network.session.count/setups/teardowns) deliberately
+# omit — the reused upstream 5-tuple, the device's own session id, the verbatim
+# final state, and the close reason. This is the per-session counterpart of the
+# `network.session.teardowns` counter; the symmetric session-at-open record is
+# its sibling, deferred (open carries no close.reason and is far lower value —
+# the close record is the one operators query). Associates `network.device`
+# (the NF that held the table; the session is not an entity). The
+# subscriber-session record is the AAA/mediation system's, not this one's.
+# Prior art: netfilter/conntrack & PF logging, IPFIX session
+# export, the firewall session-end log (PAN-OS/SRX/Checkpoint).
+events:
+- name: network.session.closed
+  stability: development
+  brief: >
+    A stateful session (a connection-table entry or IPsec/IKE SA) was removed from the device's table — the session-at-close record, carrying the per-session identity and the reason it closed.
+  note: >
+    An observation RECORD (event.name), not a state-change or alarm. The 5-tuple is the reused upstream `source.address`/`source.port` / `destination.address`/`destination.port` + `network.transport` + `network.type` (the cardinality-firewall record fields, NOT re-minted here); `network.session.id` is the device's own handle joining this to the open record and to flow records; `network.session.close.reason` is the teardown cause and `network.session.native_state` the verbatim final state. For an IPsec/IKE SA the protecting overlay is `network.tunnel.id`. The firewall security-rule, zone, and NAT-binding enrichment is the deferred `network-firewall` plane; this is the core, protocol-agnostic close record.
+  attributes:
+  - ref: network.session.type
+    requirement_level: recommended
+  - ref: network.session.id
+    requirement_level: recommended
+  - ref: network.session.close.reason
+    requirement_level: recommended
+  - ref: network.session.native_state
+    requirement_level: opt_in
+  - ref: source.address
+    requirement_level: opt_in
+    note: The session's source address (the reused upstream field, not re-minted).
+  - ref: source.port
+    requirement_level: opt_in
+  - ref: destination.address
+    requirement_level: opt_in
+  - ref: destination.port
+    requirement_level: opt_in
+  - ref: network.transport
+    requirement_level: opt_in
+    note: The L4 protocol for a connection session (`tcp`/`udp`/…).
+  - ref: network.type
+    requirement_level: opt_in
+    note: The L3 family (`ipv4`/`ipv6`).
+  - ref: network.tunnel.id
+    requirement_level: opt_in
+    note: For an IPsec/IKE SA, the overlay `network.tunnel` it protects.
+  - ref: network.event.message
+    requirement_level: opt_in
+  entity_associations:
+  - network.device

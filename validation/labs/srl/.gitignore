@@ -1,0 +1,5 @@
+# containerlab run-time artifacts
+clab-srl/
+.clab/
+*.bak
+*.log

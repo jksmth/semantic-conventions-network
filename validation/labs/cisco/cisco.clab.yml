@@ -1,0 +1,29 @@
+# Cisco IOS-XE lab: an IOL L3 router + an IOL-L2 switch, wired together.
+# Built from the CML-Free refplat by ../../images/build-cisco-iol.sh.
+# Management is the clab `ciscomgmt` net; the collector joins it to poll SNMP.
+#
+# NOTE (Apple Silicon): needs colima with Rosetta (`colima start --vz-rosetta`)
+# OR a native x86_64 Linux host. Under plain qemu-user emulation IOL's iouyap
+# networking fails (PACKET_ADD_MEMBERSHIP unsupported) and the nodes have no net.
+name: cisco
+
+mgmt:
+  network: ciscomgmt
+  ipv4-subnet: 172.30.30.0/24
+
+topology:
+  nodes:
+    cr1:
+      kind: cisco_iol
+      image: vrnetlab/cisco_iol:17.18.02
+      mgmt-ipv4: 172.30.30.11
+      startup-config: cr1.partial.cfg
+    csw1:
+      kind: cisco_iol
+      type: l2
+      image: vrnetlab/cisco_iol:L2-17.18.02
+      mgmt-ipv4: 172.30.30.12
+      startup-config: csw1.partial.cfg
+
+  links:
+    - endpoints: ["cr1:Ethernet0/1", "csw1:Ethernet0/1"]

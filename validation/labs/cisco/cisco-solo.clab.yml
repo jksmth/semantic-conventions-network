@@ -1,0 +1,13 @@
+# Single Cisco IOL L3 node — for the cross-vendor reconcile (keeps RAM low when
+# run alongside the SR Linux lab). Needs colima + Rosetta (see ../../images/README).
+name: cisco-solo
+mgmt:
+  network: ciscomgmt
+  ipv4-subnet: 172.30.30.0/24
+topology:
+  nodes:
+    cr1:
+      kind: cisco_iol
+      image: vrnetlab/cisco_iol:17.18.02
+      mgmt-ipv4: 172.30.30.11
+      startup-config: cr1.partial.cfg

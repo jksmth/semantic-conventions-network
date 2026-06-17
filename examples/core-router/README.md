@@ -75,10 +75,10 @@ graph TD
     INSTV["network.instance type=l3vrf CUST-A<br/>route_distinguisher · route_target[]"]
 
     ISIS["network.neighbor protocol=isis<br/>+ sr.adjacency_sid"]
-    BGP["network.neighbor protocol=bgp<br/>asn · address_family vpnv4/evpn/bgp_ls"]
+    BGP["network.neighbor protocol=bgp<br/>as.number · address_family vpnv4/evpn/bgp_ls"]
     BFD["network.neighbor protocol=bfd"]
 
-    RT["network.routing.routes<br/>per AF · state=recv/active/advertised/fib"]
+    RT["network.routing.route.count<br/>per AF · state=recv/active/advertised/fib"]
     CONV["network.routing.convergence.duration<br/>phase=spf/bestpath/fib_download"]
 
     LSP["network.path type=mpls_lsp<br/>role · in/out_segment · label.operation"]
@@ -161,7 +161,7 @@ interfaces:
 | `et-0/0/0` | `ethernet` | 400G coherent uplink (optics in §8) |
 | `ae0` | `lag` | LAG bundle; members `et-0/1/0`, `et-0/1/1` — see the [L2 switch LAG section](../l2-switch/README.md#7-the-lacp-uplink-bundle) |
 | `lo0` | `loopback` | anchors the node-SID and SRv6 locator (§7) |
-| `xe-2/0/0.{100,200,300}` | `subinterface` | `parent.id=xe-2/0/0`; each bound to a customer VRF (§5) |
+| `xe-2/0/0.{100,200,300}` | `subinterface` | `parent.name=xe-2/0/0`; each bound to a customer VRF (§5) |
 
 The loopback `lo0` is the most overloaded object on a core router — it anchors the
 SR identities the device advertises into the IGP. Those identities attach to it as
@@ -207,7 +207,7 @@ same peer being both a BGP and a BFD neighbour is cleanly two entities.
 
 | `network.*` | SNMP | OpenConfig |
 |-------------|------|------------|
-| `network.neighbor` `protocol=bgp`, `asn`, `address` | `bgpPeerTable` (BGP4-MIB) | `.../bgp/neighbors/neighbor` |
+| `network.neighbor` `protocol=bgp`, `as.number`, `address` | `bgpPeerTable` (BGP4-MIB) | `.../bgp/neighbors/neighbor` |
 | `network.neighbor.state` = `up` + `native_state` = `Established` | `bgpPeerState` | `.../neighbor/state/session-state` |
 | `network.address_family` = `ipv4_unicast` / `vpnv4_unicast` / `vpnv6_unicast` / `l2vpn_evpn` / `bgp_ls` | AFI/SAFI | `.../afi-safis/afi-safi/state/afi-safi-name` |
 | `network.device.role = route_reflector` *(on the RRs)* | — | — |
@@ -260,7 +260,7 @@ and its LFIB row. A transit LSR's whole job — *swap labels* — is a
 
 An SRv6 SID is simultaneously an IPv6 address, a routing prefix, and a forwarding
 function. It is recorded as **one thing with three faces, counted once**: the locator
-appears once in `network.routing.routes` (the route face), `srv6.sid.function` is the
+appears once in `network.routing.route.count` (the route face), `srv6.sid.function` is the
 forwarding face, and the SID value is the address — never triple-counted.
 
 ### 7.3 Table occupancy (the NPU component)
@@ -306,13 +306,13 @@ the health signals.
 
 | `network.*` metric | SNMP | OpenConfig |
 |--------------------|------|------------|
-| `network.routing.routes` (`address_family`, `route.state` ∈ received/active/advertised/**fib**) | per-AF RIB/FIB counts | `.../afi-safi/state/prefixes/...` |
+| `network.routing.route.count` (`address_family`, `route.state` ∈ received/active/advertised/**fib**) | per-AF RIB/FIB counts | `.../afi-safi/state/prefixes/...` |
 | `network.routing.updates` *(churn, direction)* | `bgpPeer*Updates` | `.../neighbor/state/messages/.../UPDATE` |
 | `network.routing.convergence.duration` (`phase` ∈ spf/bestpath/fib_download) | vendor convergence stats | `.../state/...` |
-| `network.routing.ecmp.routes` (`ecmp.width`, `address_family`) | `inetCidrRouteTable` rows per prefix | `.../afts/ipv4-unicast/ipv4-entry` → `next-hop-group` |
+| `network.routing.ecmp.route.count` (`ecmp.width`, `address_family`) | `inetCidrRouteTable` rows per prefix | `.../afts/ipv4-unicast/ipv4-entry` → `next-hop-group` |
 
 The RIB-vs-FIB gap is expressed as `route.state=active` vs `route.state=fib`. ECMP
-fan-out is `network.routing.ecmp.routes` — FIB routes bucketed by
+fan-out is `network.routing.ecmp.route.count` — FIB routes bucketed by
 `network.routing.ecmp.width`, so the `width=1` bucket is the unprotected-prefix count
 and a drained high-width bucket means a lost path. Per-member traffic imbalance across a
 group is read from per-interface `network.interface.io`.
@@ -349,7 +349,7 @@ is recoverable. The point-in-time **events** refine the
 ## 11. What this router does *not* (yet) model
 
 - **ECMP per-member load-balance imbalance** — path *count* is now modelled
-  (`network.routing.ecmp.routes` by width); per-member traffic skew across a group's
+  (`network.routing.ecmp.route.count` by width); per-member traffic skew across a group's
   members is read from `network.interface.io`, not a dedicated routing metric.
 - **BFD → protected-client binding** — which IGP adjacency / BGP session / LSP a BFD
   session protects has no explicit attribute yet.

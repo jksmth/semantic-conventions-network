@@ -1,0 +1,74 @@
+---
+file_format: definition/2
+attributes:
+- key: network.l2.fdb.entry.type
+  type:
+    members:
+    - id: dynamic
+      value: "dynamic"
+      brief: Dynamically learned via data-plane MAC learning.
+      stability: development
+    - id: static
+      value: "static"
+      brief: Statically configured.
+      stability: development
+    - id: control_plane
+      value: "control_plane"
+      brief: >
+        Learned via the control plane (e.g. EVPN MAC/IP advertisement).
+      stability: development
+  stability: development
+  brief: How a MAC forwarding entry was installed.
+
+# --- MAC presence/lookup state -----------------------------------------
+# The state carried by the network.l2.mac.status lookup metric. A status
+# vocabulary (the "present/absent" probe answer), distinct from
+# network.l2.fdb.entry.type (how an entry was INSTALLED).
+- key: network.l2.mac.state
+  type:
+    members:
+    - id: present
+      value: "present"
+      brief: The MAC address is currently learned/present in the forwarding database.
+      stability: development
+    - id: absent
+      value: "absent"
+      brief: The MAC address is not present in the forwarding database.
+      stability: development
+    - id: stale
+      value: "stale"
+      brief: >
+        The entry exists but has aged past its freshness window (present but not recently confirmed).
+      stability: development
+    - id: moved
+      value: "moved"
+      brief: >
+        The address was last seen on a different interface than expected (a move/flap was observed for it).
+      stability: development
+  stability: development
+  brief: >
+    The presence/lookup state of a specific MAC address in the forwarding database.
+  note: >
+    The state attribute of the `network.l2.mac.status` lookup metric (the status-metric / K8s `status.phase` pattern). Open enum, lowercase — additional lookup states MAY be added without minting a new metric.
+
+# --- MAC-move record fields --------------------------------------------
+# Carried on the `network.l2.mac.moved` RECORD: a MAC is a
+# count, not an entity, so its move is a per-object observation record (it
+# names a MAC + old/new port), NOT a state.changed on a durable entity.
+- key: network.l2.mac.address
+  type: string
+  stability: development
+  brief: >
+    The MAC address the record is about (the moved/limited forwarding entry).
+  note: >
+    Represent in IEEE RA hexadecimal form — hyphen-separated octets, uppercase, most- to least-significant — matching `host.mac` / `hw.network.physical_address`. Record/event-level metadata only — a MAC is not an entity and this MUST NOT be a metric dimension (the cardinality firewall). Retains the `.address` suffix (unlike the bare `network.interface.mac`) because `network.l2.mac` is itself a populated namespace (`.entries`/`.moved`/`.status`/`.state`), so the value leaf needs a disambiguating segment.
+  examples: ["00-1B-21-3C-4D-5E", "AA-BB-CC-DD-EE-FF"]
+
+- key: network.l2.mac.previous_interface.name
+  type: string
+  stability: development
+  brief: >
+    For a `network.l2.mac.moved` record: the `network.interface.name` the MAC was learned on BEFORE the move.
+  note: >
+    The new/current interface is the reused `network.interface.name` (the port the MAC moved TO); this carries the port it moved FROM, so "MAC X moved from ge-3 to ge-7" is fully expressed.
+  examples: ["ge-3", "xe-0/0/1", "ae0"]

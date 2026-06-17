@@ -61,9 +61,9 @@ graph TD
 
     INSTV["network.instance<br/>type=l3vrf (per-VPN)"]
     NBR["network.neighbor<br/>protocol=bgp/isis"]
-    RT["network.routing.routes"]
+    RT["network.routing.route.count"]
 
-    SESS["network.access.sessions<br/>count by state + type<br/>setups (cps) · teardowns"]
+    SESS["network.access.session.count<br/>count by state + type<br/>setups (cps) · teardowns"]
     AAA["network.access.aaa.*<br/>requests(result, server) · duration · coa"]
     POOL["network.access.pool<br/>addresses(used/free) · utilization"]
 
@@ -92,7 +92,7 @@ graph TD
 ```
 
 The one thing to read off this diagram: the millions of subscribers on the left
-collapse into a handful of **aggregate metrics** (`network.access.sessions` bucketed
+collapse into a handful of **aggregate metrics** (`network.access.session.count` bucketed
 by a few low-cardinality dimensions). Per-subscriber detail leaves as a **record**
 toward the AAA/mediation system — never as a per-session entity or per-subscriber
 metric series.
@@ -108,7 +108,7 @@ never an entity.** See [the cardinality firewall](../../docs/conventions.md#the-
 
 | The subscriber dimension | How it is modelled | Why |
 |--------------------------|--------------------|-----|
-| Millions of sessions | **aggregate count** (`network.access.sessions` by state + type) | bounded, low-cardinality |
+| Millions of sessions | **aggregate count** (`network.access.session.count` by state + type) | bounded, low-cardinality |
 | Setup / teardown rate | **counters** (`network.access.session.setups` / `.teardowns`) | rates, not per-session series |
 | Per-subscriber identity (username, circuit-id, address, usage) | **a record** owned by the AAA/mediation system (RADIUS accounting) | high-cardinality, PII — belongs off the metric path |
 | A per-session entity, or a per-subscriber metric series | **never emitted** | the explosion the firewall blocks |
@@ -128,7 +128,7 @@ how fast they are churning.
 
 | What | `network.*` | SNMP | OpenConfig / source |
 |------|-------------|------|---------------------|
-| Active session count (by state + type) | `network.access.sessions` (+ `network.access.session.state`, `.type`) | vendor subscriber-MIB | vendor subscriber-mgmt YANG |
+| Active session count (by state + type) | `network.access.session.count` (+ `network.access.session.state`, `.type`) | vendor subscriber-MIB | vendor subscriber-mgmt YANG |
 | Session type | `network.access.session.type` = `pppoe`/`ipoe`/`l2tp` | vendor subscriber-MIB | subscriber session-type leaf |
 | Session state | `network.access.session.state` = `up`/`connecting`/`terminating`/`down` | vendor subscriber-MIB | subscriber oper-state |
 | Setup rate (calls-per-second) | `network.access.session.setups` (counter, + type) | vendor subscriber-MIB | subscriber setup counter |
@@ -175,7 +175,7 @@ subscriber-onboarding outage.
 |------|-------------|------|--------|
 | Address pool as an object | `network.access.pool` entity (`pool.id`, `pool.type`) | vendor pool-MIB | vendor address-pool YANG |
 | Pool family / kind | `network.access.pool.type` = `ipv4`/`ipv6_na`/`ipv6_pd` | vendor pool-MIB | pool address-family leaf |
-| Used / free / size | `network.access.pool.addresses` (+ `pool.state`) | vendor pool-MIB used/free | pool used/free counters |
+| Used / free / size | `network.access.pool.address.count` (+ `pool.state`) | vendor pool-MIB used/free | pool used/free counters |
 | **Pool utilisation (the alert signal)** | `network.access.pool.utilization` (ratio 0.0–1.0) | derived | derived |
 | DHCPv6 prefix delegation | `pool.type = ipv6_pd` | vendor pool-MIB | IA_PD pool |
 
@@ -230,7 +230,7 @@ exactly the rule §3 makes for sessions, applied to shaping.
 
 North of the subscriber edge the BNG is a conventional router and maps exactly like
 the [core router](../core-router/README.md): `network.interface` uplinks + optics,
-`network.neighbor` (IS-IS / BGP, `protocol` key), `network.routing.routes` per AF, and
+`network.neighbor` (IS-IS / BGP, `protocol` key), `network.routing.route.count` per AF, and
 per-VPN L3VRFs as `network.instance type=l3vrf`.
 
 Hardware health follows the [namespace boundary](../../docs/architecture.md#namespace-layering):

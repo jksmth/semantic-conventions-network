@@ -1,0 +1,47 @@
+# Cross-vendor SNMP: Cisco IOL polled off-box -> network.* -> weaver.
+# The cisco lab + ciscomgmt net come from containerlab (run-cisco.sh).
+name: netlab-cisco
+
+services:
+  weaver-livecheck:
+    image: ${WEAVER_IMAGE:-otel/weaver:latest}
+    container_name: cisco-weaver
+    working_dir: /work
+    volumes:
+      - ../..:/work:ro
+      - ./out:/out
+    networks: [ciscomgmt]
+    command:
+      - registry
+      - live-check
+      - -r
+      - model
+      - --input-source
+      - otlp
+      - --otlp-grpc-address
+      - 0.0.0.0
+      - --otlp-grpc-port
+      - "4317"
+      - --inactivity-timeout
+      - "0"
+      - --format
+      - json
+      - --output
+      - /out
+
+  otelcol:
+    image: ${OTELCOL_IMAGE:-otel/opentelemetry-collector-contrib:latest}
+    container_name: cisco-otelcol
+    networks: [ciscomgmt]
+    depends_on: [weaver-livecheck]
+    environment:
+      SNMP_TARGET: 172.30.30.11 # cr1 (IOL L3 router)
+      DEVICE_ID: cr1
+      WEAVER_ENDPOINT: cisco-weaver:4317
+    volumes:
+      - ./otelcol-cisco.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+networks:
+  ciscomgmt:
+    name: ciscomgmt
+    external: true

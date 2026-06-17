@@ -1,0 +1,115 @@
+---
+file_format: definition/2
+
+# network-flow events — the flow OBSERVATION record (the default carrier).
+#
+#   - network.flow — the per-flow observation RECORD (`event.name`): one observed
+#     conversation, carrying its 5-tuple (reused source.*/destination.*), its
+#     measures (bytes/packets), its disposition (action), and its correlation
+#     handles (flow.id / community_id). THE DEFAULT carrier of the three the
+#     flow-signal table blesses (record / metric / span): a flow is a time-bounded
+#     OBSERVATION — a structured event, not a causal span — so the record is the
+#     cardinality-safe, backend-portable floor. The EQUAL span carrier (blessed
+#     for connection-oriented L4/L7 flows) is NOT authored here: it MUST share the
+#     span conventions pinned in network-test and carries the IDENTICAL attribute
+#     set (registry.yaml header).
+#
+# Reuse, don't mint: source.* (the observed origin) / destination.* (the observed
+# target) / network.transport / network.type / network.protocol.name /
+# network.tunnel.id / network.interface.name (the observation interface) /
+# network.packet.drop.reason (the why, on a dropped flow) are referenced from
+# upstream + the source/destination/interface/tunnel/packet registries, never
+# redefined. The producing observer is the Resource-level network.observer.id;
+# the record associates the network.observer entity.
+
+events:
+- name: network.flow
+  stability: development
+  brief: >
+    A single observed network flow — the per-conversation observation record an IPFIX/NetFlow/sFlow export, VPC flow log, or eBPF flow record carries.
+  note: |
+    A third-category observation RECORD (`event.name`), not a state-change or
+    alarm — the passive-observation twin of the active `network.test.executed`
+    record. THE DEFAULT flow carrier (the cardinality-safe floor); the equal
+    span carrier reuses network-test's span conventions and the identical
+    attribute set.
+
+    ONE record for five sources: IPFIX, NetFlow, sFlow flows, cloud VPC flow
+    logs, and eBPF flow all land here, distinguished only by the Resource-level
+    `network.observer.collection.method`
+    (`ipfix`/`netflow`/`sflow`/`ebpf`/`cloud_flow_logs`).
+
+    The conversation endpoints are the reused observed-endpoint
+    `source.*`/`destination.*` (a flow is third-party-observed traffic — semconv
+    #1721 — NOT the connection-scoped `network.peer.*`); the producing observer
+    is the Resource-level `network.observer.id`. `network.flow.id` joins to
+    `network.session.id`/`network.nat.port_block`; `network.community_id`
+    correlates the same conversation across observers. Where the disposition is a
+    drop (`network.flow.action = drop`), `network.packet.drop.reason` states why.
+    `severity_number` SHOULD be INFO.
+
+    Cardinality: this RECORD is where the high-cardinality 5-tuple lives. The
+    metric carriers (metrics.yaml) MUST stay on bounded dimensions only — the
+    5-tuple never goes on a metric data point.
+  attributes:
+  - ref: network.flow.id
+    requirement_level: recommended
+    note: The exporter's own flow handle; the join key to session/nat.
+  - ref: network.community_id
+    requirement_level: opt_in
+    note: The bidirectional 5-tuple hash; the cross-observer correlation handle.
+  - ref: network.flow.direction
+    requirement_level: recommended
+  - ref: source.address
+    requirement_level: recommended
+    note: The observed source of the conversation.
+  - ref: source.port
+    requirement_level: recommended
+  - ref: destination.address
+    requirement_level: recommended
+    note: The observed destination of the conversation.
+  - ref: destination.port
+    requirement_level: recommended
+  - ref: network.transport
+    requirement_level: recommended
+  - ref: network.type
+    requirement_level: recommended
+  - ref: network.protocol.name
+    requirement_level: opt_in
+  - ref: network.flow.bytes
+    requirement_level: recommended
+  - ref: network.flow.packets
+    requirement_level: recommended
+  - ref: network.flow.action
+    requirement_level: recommended
+  - ref: network.packet.drop.reason
+    requirement_level:
+      conditionally_required: When `network.flow.action = drop` and the drop cause is known.
+    note: The cause of the drop (the orthogonal "why" to action's "what"); reused from network-packet.
+  - ref: network.flow.sampling.rate
+    requirement_level:
+      conditionally_required: When the observation is sampled (sFlow / sampled NetFlow). Absent or 1 means unsampled.
+  - ref: network.flow.tcp.flags
+    requirement_level: opt_in
+  - ref: network.interface.name
+    requirement_level: opt_in
+    note: The observation interface; its ingress/egress sense is given by `network.flow.direction`.
+  - ref: network.tunnel.id
+    requirement_level: opt_in
+    note: The tunnel/MPLS the flow rode (single identity; the ordered label stack is deferred).
+  - ref: source.as.number
+    requirement_level: opt_in
+  - ref: destination.as.number
+    requirement_level: opt_in
+  - ref: source.zone
+    requirement_level: opt_in
+  - ref: destination.zone
+    requirement_level: opt_in
+  - ref: source.vlan.id
+    requirement_level: opt_in
+  - ref: destination.vlan.id
+    requirement_level: opt_in
+  - ref: network.event.message
+    requirement_level: opt_in
+  entity_associations:
+  - network.observer

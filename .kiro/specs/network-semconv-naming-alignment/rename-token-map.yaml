@@ -1,0 +1,555 @@
+# Authoritative old -> new token map and keep / do-not-change inventory
+# =====================================================================
+#
+# Task 1.1 artifact for the `network-semconv-naming-alignment` spec.
+#
+# This file is the single source of truth consumed by the later sweep and
+# guard tasks (2.x-13.x). It encodes:
+#
+#   1. `rename_map`     - every old -> new identifier as a COMPLETE TOKEN,
+#                         grouped by decision (D1-D9), with kind, decision,
+#                         definition file, and the requirement IDs it satisfies.
+#   2. `keep_inventory` - the verbatim keep / do-not-change inventory from the
+#                         design ("Keep / Do-Not-Change Inventory") so the guard
+#                         tasks can assert non-change.
+#   3. `token_matching` - the complete-token (identifier-boundary) matching rule
+#                         so prefixes never cross-match.
+#
+# Source of truth: design.md "Rename Mapping Table", "Lockstep Update Strategy"
+# (steps 1-2), and "Keep / Do-Not-Change Inventory".
+# Requirements: 11.1, 13.1.
+#
+# NOTE: this is metadata for the sweep, NOT a registry model file. It lives
+# under .kiro/specs/ and is never resolved by Weaver.
+
+meta:
+  spec: network-semconv-naming-alignment
+  task: "1.1 Build the authoritative old->new token map and the keep-inventory guard list"
+  registry_root: model/network
+  # Reference_Sites the sweep + re-scan must cover (Requirement 11.1-11.4):
+  reference_site_globs:
+    - "model/network/**/registry.yaml"   # attribute definitions (- key:) + refs (- ref:)
+    - "model/network/**/metrics.yaml"    # metric definitions (- name:) + dimension refs + prose
+    - "model/network/**/events.yaml"     # event definitions (- id:) + prose
+    - "model/network/**/entities.yaml"   # entity identity:/description: refs + prose
+    - "examples/README.md"
+    - "examples/*/README.md"
+    - "docs/conventions.md"
+    - "docs/naming-review.md"
+
+# ---------------------------------------------------------------------------
+# Complete-token (identifier-boundary) matching rule (Requirement 11.1).
+#
+# A match for `old` requires:
+#   - the character immediately BEFORE the token is a non-identifier boundary
+#     (start-of-string, quote ' or ", backtick `, whitespace, ':', '(', '[',
+#     '=', ',') -- never an identifier char or '.'; and
+#   - the character immediately AFTER the token is NOT a char that would extend
+#     it into a longer identifier -- i.e. NOT '.', NOT '_', NOT an identifier
+#     char [A-Za-z0-9]. Allowed trailing boundaries: end-of-string, quote,
+#     backtick, whitespace, ':', ')', ']', ',', ';', '/'.
+#
+# This prevents prefix cross-matching. Worked guard cases (must NOT match):
+# ---------------------------------------------------------------------------
+token_matching:
+  identifier_char_class: "[A-Za-z0-9_.]"   # chars that are part of / extend a dotted semconv name
+  leading_boundary_chars: ["<sot>", "'", '"', "`", " ", "\t", "\n", ":", "(", "[", "=", ",", "/"]
+  # a real match must NOT be followed by any of these (they would extend the token):
+  trailing_extends_chars: [".", "_", "[A-Za-z0-9]"]
+  must_not_cross_match:
+    - old: network.nat.ports
+      not_inside:
+        - network.nat.port_blocks   # trailing '_' extends -> different name
+        - network.nat.port.count    # trailing '.' extends -> the NEW name
+        - network.nat.pool.addresses
+    - old: network.nat.port_blocks
+      not_inside:
+        - network.nat.port_block.count
+    - old: network.multicast.routes
+      not_inside:
+        - network.multicast.route.state   # dimension attribute, trailing '.'
+        - network.multicast.route.count   # the NEW name
+    - old: network.admin_state
+      not_inside:
+        - network.interface.admin_state   # distinct map entry; leading '.' boundary differs
+    - old: network.oper_state
+      not_inside:
+        - network.interface.oper_state
+    - old: network.admin_status
+      not_inside:
+        - network.admin.status            # the NEW name
+    - old: network.l2.mac.entries
+      not_inside:
+        - network.l2.mac.entry.type       # own D2 entry
+        - network.l2.mac.address
+        - network.l2.mac.state
+        - network.l2.mac.status
+        - network.l2.mac.moved
+    - old: network.interface.id
+      not_inside:
+        - network.interface.index         # added D7 attr
+        - network.device.id
+        - network.lag.id
+        - network.module.id
+        - network.module.parent.id
+    - old: network.routing.routes
+      not_inside:
+        - network.routing.route.count
+        - network.routing.ecmp.routes
+        - network.routing.route.state
+    - old: network.l3.adjacency.state
+      not_inside:
+        - network.l3.adjacency.entry.type
+  # Backstop: the Weaver resolve/check (task 13.1) catches any missed model
+  # ref as a broken reference; the token re-scan (task 13.2) catches any
+  # surviving old name in prose / examples / docs.
+
+# ---------------------------------------------------------------------------
+# RENAME MAP - every old -> new complete-token identifier, grouped by decision.
+# Each entry: old, new, kind, decision, def_file (definition site relative to
+# repo root), requirements (acceptance-criteria IDs the rename satisfies).
+# `combined_with` flags the two single-edit combined targets (no intermediate
+# name) per design section 4 ordering.
+# ---------------------------------------------------------------------------
+rename_map:
+
+  # ===== D1 - De-pluralize occupancy UpDownCounters -> {object}.count =======
+  # 13 occupancy counters. Instrument (updowncounter), unit, brief, attribute
+  # set all preserved; name-only change (Requirement 1.16).
+  - old: network.routing.routes
+    new: network.routing.route.count
+    kind: metric
+    decision: D1
+    def_file: model/network/routing/metrics.yaml
+    requirements: ["1.1", "1.16"]
+  - old: network.routing.ecmp.routes
+    new: network.routing.ecmp.route.count
+    kind: metric
+    decision: D1
+    def_file: model/network/routing/metrics.yaml
+    requirements: ["1.2", "1.16"]
+  - old: network.multicast.routes
+    new: network.multicast.route.count
+    kind: metric
+    decision: D1
+    def_file: model/network/multicast/metrics.yaml
+    requirements: ["1.3", "1.16"]
+  - old: network.multicast.groups
+    new: network.multicast.group.count
+    kind: metric
+    decision: D1
+    def_file: model/network/multicast/metrics.yaml
+    requirements: ["1.4", "1.16"]
+  - old: network.evpn.routes
+    new: network.evpn.route.count
+    kind: metric
+    decision: D1
+    def_file: model/network/evpn/metrics.yaml
+    requirements: ["1.5", "1.16"]
+  - old: network.sr.sids
+    new: network.sr.sid.count
+    kind: metric
+    decision: D1
+    def_file: model/network/sr/metrics.yaml
+    requirements: ["1.6", "1.16"]
+  - old: network.nat.translations
+    new: network.nat.translation.count
+    kind: metric
+    decision: D1
+    def_file: model/network/nat/metrics.yaml
+    requirements: ["1.7", "1.16"]
+  - old: network.nat.ports
+    new: network.nat.port.count
+    kind: metric
+    decision: D1
+    def_file: model/network/nat/metrics.yaml
+    requirements: ["1.8", "1.16"]
+  - old: network.nat.port_blocks
+    new: network.nat.port_block.count
+    kind: metric
+    decision: D1
+    def_file: model/network/nat/metrics.yaml
+    requirements: ["1.9", "1.16"]
+  - old: network.nat.pool.addresses
+    new: network.nat.pool.address.count
+    kind: metric
+    decision: D1
+    def_file: model/network/nat/metrics.yaml
+    requirements: ["1.10", "1.16"]
+  - old: network.access.sessions
+    new: network.access.session.count
+    kind: metric
+    decision: D1
+    def_file: model/network/access/metrics.yaml
+    requirements: ["1.11", "1.16"]
+  - old: network.access.pool.addresses
+    new: network.access.pool.address.count
+    kind: metric
+    decision: D1
+    def_file: model/network/access/metrics.yaml
+    requirements: ["1.12", "1.16"]
+  - old: network.wifi.bss.stations
+    new: network.wifi.bss.station.count
+    kind: metric
+    decision: D1
+    def_file: model/network/wifi/metrics.yaml
+    requirements: ["1.13", "1.16"]
+
+  # ===== D2 - FDB: container `fdb`, entry `mac` =============================
+  # network.l2.mac.entries is the combined D1+D2 target: lands DIRECTLY as
+  # network.l2.fdb.entry.count (no intermediate network.l2.mac.entry.count).
+  - old: network.l2.mac.entries
+    new: network.l2.fdb.entry.count
+    kind: metric
+    decision: D2
+    def_file: model/network/l2/metrics.yaml
+    combined_with: ["D1"]
+    requirements: ["2.1", "1.16"]
+  - old: network.l2.mac.entry.type
+    new: network.l2.fdb.entry.type
+    kind: attribute
+    decision: D2
+    def_file: model/network/l2/registry.yaml
+    # also ref'd as dimension on network.l2.fdb.entry.count in l2/metrics.yaml
+    requirements: ["2.2"]
+  - old: network.l2.mac.learn_discards
+    new: network.l2.fdb.entry.discards
+    kind: metric
+    decision: D2
+    def_file: model/network/l2/metrics.yaml
+    requirements: ["2.3"]
+  - old: network.l2.mac_limit.exceeded
+    new: network.l2.fdb.limit_exceeded
+    kind: event
+    decision: D2
+    def_file: model/network/l2/events.yaml
+    requirements: ["2.4"]
+  - old: network.vlan.mac_limit
+    new: network.vlan.fdb.limit
+    kind: attribute
+    decision: D2
+    def_file: model/network/vlan/registry.yaml
+    requirements: ["2.5"]
+  - old: network.instance.mac_limit
+    new: network.instance.fdb.limit
+    kind: attribute
+    decision: D2
+    def_file: model/network/instance/registry.yaml
+    requirements: ["2.6"]
+  - old: network.instance.mac_learning
+    new: network.instance.fdb.mac_learning   # keep the mac_learning leaf word
+    kind: attribute
+    decision: D2
+    def_file: model/network/instance/registry.yaml
+    requirements: ["2.7"]
+
+  # ===== D3 - Dot the EIGRP queue leaf =====================================
+  - old: network.neighbor.eigrp.queue_depth
+    new: network.neighbor.eigrp.queue.depth
+    kind: metric
+    decision: D3
+    def_file: model/network/neighbor/metrics.yaml
+    requirements: ["3.1"]
+
+  # ===== D4 - `adjacency` -> `arpnd` (namespace) ===========================
+  # network.l3.adjacency.entries is the combined D4+D1 target: lands DIRECTLY
+  # as network.l3.arpnd.entry.count. network.type (ipv4/ipv6) discriminator
+  # association preserved on the count metric (Requirement 4.4).
+  - old: network.l3.adjacency.entries
+    new: network.l3.arpnd.entry.count
+    kind: metric
+    decision: D4
+    def_file: model/network/l3/metrics.yaml
+    combined_with: ["D1"]
+    requirements: ["4.2", "4.3", "4.4"]
+  - old: network.l3.adjacency.entry.type
+    new: network.l3.arpnd.entry.type
+    kind: attribute
+    decision: D4
+    def_file: model/network/l3/registry.yaml
+    requirements: ["4.2", "4.5"]
+  - old: network.l3.adjacency.state
+    new: network.l3.arpnd.state
+    kind: attribute
+    decision: D4
+    def_file: model/network/l3/registry.yaml
+    requirements: ["4.2", "4.5"]
+
+  # ===== D5 - Dot admin/oper axes; fold interface state ====================
+  # Shared attribute renames (defined in common/registry.yaml). The folded
+  # interface-specific attrs are REMOVALS, not renames -- tracked in
+  # `structural_changes` below, not here.
+  - old: network.admin_state
+    new: network.admin.state
+    kind: attribute
+    decision: D5
+    def_file: model/network/common/registry.yaml
+    # ref-sites: device/entities.yaml (4 grains), device/metrics.yaml (admin.status),
+    #            interface/entities.yaml (becomes 5th grain after fold)
+    requirements: ["5.1"]
+  - old: network.oper_state
+    new: network.oper.state
+    kind: attribute
+    decision: D5
+    def_file: model/network/common/registry.yaml
+    requirements: ["5.2"]
+  - old: network.admin_status
+    new: network.admin.status
+    kind: metric
+    decision: D5
+    def_file: model/network/device/metrics.yaml
+    requirements: ["5.3"]
+  - old: network.oper_status
+    new: network.oper.status
+    kind: metric
+    decision: D5
+    def_file: model/network/device/metrics.yaml
+    requirements: ["5.4"]
+
+  # ===== D7 - Interface FK leaf renames `.id` -> `.name` ===================
+  # The drop of network.interface.id and the identity/dimension repoints are
+  # structural (see `structural_changes`). The FK leaf renames below are
+  # leaf-name-only changes (Requirement 7.12): value type, requirement level,
+  # entity association, development stability all preserved.
+  - old: network.interface.parent.id
+    new: network.interface.parent.name
+    kind: attribute
+    decision: D7
+    def_file: model/network/interface/registry.yaml
+    requirements: ["7.8", "7.12"]
+  - old: network.interface.lower_layer.id
+    new: network.interface.lower_layer.name
+    kind: attribute
+    decision: D7
+    def_file: model/network/interface/registry.yaml
+    requirements: ["7.8", "7.12"]
+  - old: network.link.local.interface.id
+    new: network.link.local.interface.name
+    kind: attribute
+    decision: D7
+    def_file: model/network/link/registry.yaml
+    requirements: ["7.5", "7.12"]
+  - old: network.link.remote.interface.id
+    new: network.link.remote.interface.name
+    kind: attribute
+    decision: D7
+    def_file: model/network/link/registry.yaml
+    requirements: ["7.5", "7.12"]
+  - old: network.path.local.interface.id
+    new: network.path.local.interface.name
+    kind: attribute
+    decision: D7
+    def_file: model/network/path/registry.yaml
+    requirements: ["7.6", "7.12"]
+  - old: network.l2.mac.previous_interface.id
+    new: network.l2.mac.previous_interface.name
+    kind: attribute
+    decision: D7
+    def_file: model/network/l2/registry.yaml
+    # also ref'd on the network.l2.mac.moved record in l2/events.yaml
+    requirements: ["7.7", "7.12"]
+
+# ---------------------------------------------------------------------------
+# STRUCTURAL CHANGES - not plain string renames; tracked separately so the
+# sweep does NOT treat them as token substitutions.
+# ---------------------------------------------------------------------------
+structural_changes:
+  # D5 - interface state folded into the shared axis (definitions REMOVED, not
+  # string-replaced; interface entity refs repoint to the shared attribute).
+  - decision: D5
+    type: remove_definition
+    name: network.interface.admin_state
+    def_file: model/network/interface/registry.yaml
+    repoint_refs_to: network.admin.state
+    requirements: ["5.5", "5.7"]
+  - decision: D5
+    type: remove_definition
+    name: network.interface.oper_state
+    def_file: model/network/interface/registry.yaml
+    repoint_refs_to: network.oper.state
+    requirements: ["5.6", "5.7"]
+  - decision: D5
+    type: add_definition
+    name: network.native_state
+    def_file: model/network/common/registry.yaml
+    note: "verbatim untransformed vendor string; defined exactly as network.neighbor.native_state"
+    requirements: ["5.11"]
+  # D7 - drop the minted interface id; identity becomes the Stable upstream
+  # network.interface.name. Identity/dimension uses of network.interface.id
+  # repoint to network.interface.name (NOT a leaf rename).
+  - decision: D7
+    type: remove_definition
+    name: network.interface.id
+    def_file: model/network/interface/registry.yaml
+    requirements: ["7.1"]
+  - decision: D7
+    type: repoint_reference
+    old: network.interface.id
+    new: network.interface.name
+    note: >
+      identity/dimension uses only - interface/entities.yaml identity: and the
+      FDB/MAC metric dimensions in l2/metrics.yaml. network.interface.name is the
+      Stable upstream attr (preserve stable stability + string type).
+    ref_sites:
+      - model/network/interface/entities.yaml
+      - model/network/l2/metrics.yaml
+    # prose mentions of network.interface.id across the tree (link/path/device/
+    # optical/pon/lag/sr notes etc.) are swept by the token re-scan to
+    # network.interface.name as identity references.
+    requirements: ["7.2"]
+  - decision: D7
+    type: add_definition
+    name: network.interface.index
+    def_file: model/network/interface/registry.yaml
+    note: "opt_in IF-MIB ifIndex disambiguator; named `index`, NOT `if_index`"
+    requirements: ["7.3"]
+  - decision: D7
+    type: restate_note
+    name: network.lag.members
+    def_file: model/network/lag/registry.yaml
+    note: "key unchanged; note clarifies values are interface NAMES"
+    requirements: ["7.9"]
+  - decision: D7
+    type: repin_note
+    name: network.interface.description
+    def_file: model/network/interface/registry.yaml
+    note: "pin to SNMP ifAlias; drop the conflated '/ interface description' phrasing"
+    requirements: ["7.4"]
+  # D8 - additive
+  - decision: D8
+    type: add_definition
+    name: network.interface.higher_layer.id
+    def_file: model/network/interface/registry.yaml
+    note: "opt_in, multi-valued (array); value = interface names; inverse of lower_layer"
+    requirements: ["8.1", "8.2"]
+  - decision: D8
+    type: add_definition
+    name: network.interface.last_change
+    def_file: model/network/interface/registry.yaml
+    note: "timestamp of most recent oper-state transition (IF-MIB ifLastChange)"
+    requirements: ["8.3"]
+  # D9 - additive + re-pin
+  - decision: D9
+    type: repin_note
+    name: network.interface.mtu
+    def_file: model/network/interface/registry.yaml
+    note: "key unchanged; re-pin note to L2 frame MTU (OpenConfig config/mtu), int bytes 64-65535"
+    requirements: ["9.1", "9.5"]
+  - decision: D9
+    type: add_definition
+    name: network.interface.ip.mtu
+    def_file: model/network/interface/registry.yaml
+    note: "L3 per-address-family MTU, int bytes 64-65535, dimensioned by network.type {ipv4,ipv6}"
+    requirements: ["9.2", "9.3", "9.4"]
+
+# ---------------------------------------------------------------------------
+# KEEP / DO-NOT-CHANGE INVENTORY  (verbatim from design "Keep / Do-Not-Change
+# Inventory"). Guard tasks (3.2, 4.2, 6.5, 7.3, 9.2, 10.1, 13.5) assert these
+# are UNCHANGED. This is never an edit target.
+# Property 3: every name not in the rename set is unchanged (non-over-reach).
+# ---------------------------------------------------------------------------
+keep_inventory:
+
+  # Monotonic counters - correctly plural (R2) - Requirement 1.15
+  monotonic_counters:
+    - network.interface.packets
+    - network.path.packets
+    - network.qos.queue.packets
+    - network.protocol.messages
+    - network.protocol.errors
+    - network.neighbor.state_changes
+    - network.stp.topology_changes
+    - network.routing.updates
+    - network.access.session.setups
+    - network.access.session.teardowns
+    - network.session.setups
+    - network.session.teardowns
+    - network.access.aaa.requests
+    - network.access.coa.requests
+    - network.path.label.operations
+    - network.path.protection.switches
+    - network.multicast.rpf_failures
+    - network.pon.fec.corrected
+
+  # Already-correct count template - Requirement 1.14
+  already_correct_count:
+    - network.session.count
+
+  # QoS depth gauges (Sec.2 / D-Sec.2) - two SEPARATE gauges, never folded,
+  # never given a stat/current-vs-max selecting attribute - Requirement 6
+  qos_depth_gauges:
+    - network.qos.queue.depth
+    - network.qos.queue.depth.max
+
+  # FDB keep items (D2 / Requirement 2.8/2.9) - stay under `mac`. Only change
+  # to previous_interface.* is the D7 FK leaf .id -> .name (in rename_map).
+  fdb_keep_items:
+    - network.l2.mac.status
+    - network.l2.mac.state
+    - network.l2.mac.moved
+    - network.l2.mac.address
+    - network.l2.mac.previous_interface.*   # prefix; sole change is the D7 FK leaf
+
+  # Acceptable snake_case leaves (D3 / Requirement 3.2) - unchanged
+  acceptable_snake_case_leaves:
+    - min_links
+    - system_id
+    - route_type
+    - df_role
+    - address_family
+    - route_distinguisher
+    - route_target
+    - transport_class
+    - path_cost
+    - is_root
+    - prefix_sid
+    - adjacency_sid
+    - binding_sid
+    - segment_list
+    - in_segment
+    - out_segment
+    - filter_mode
+    - noise_floor
+    - tx_power
+    - service_name
+    - ac_name
+    - address_scope
+    - state_changes
+    - topology_changes
+    - rpf_failures
+    - native_state
+    - "previous_*"   # the previous_* leaves
+
+  # Already-dotted limit attributes (D3 / Requirement 3.3) - unchanged
+  already_dotted_limit_attrs:
+    - network.optical.power.limit
+    - network.optical.bias_current.limit
+    - network.device.memory.limit
+
+  # Per-domain state leaves (D5 / Requirement 5.10) - NOT folded into admin/oper
+  per_domain_state_leaves:
+    - network.stp.port.state
+    - network.pon.onu.state
+    - network.wifi.ap.state
+    - network.multicast.querier
+
+  # network.neighbor namespace (D6 / Requirement 10.4/10.5) - confirmation only;
+  # every key/metric/namespace identical before & after. `network.peer` must
+  # NOT appear as a replacement.
+  neighbor_namespace:
+    prefix: network.neighbor.*
+    forbid_replacement_token: network.peer
+
+  # Sub-entity minted .id keys (D7 / Requirement 7.10) - unchanged. Interface
+  # is the sole exception (reuses upstream network.interface.name).
+  sub_entity_id_keys:
+    - network.module.id
+    - network.module.parent.id
+    - network.lag.id
+    - network.device.id
+    # NAT / access pool ids and every other entity .id keep the .id convention
+
+  # network.interface.mtu key (D9 / Requirement 9.5) - key retained; note only
+  # re-pinned (tracked in structural_changes); network.interface.ip.mtu added.
+  interface_mtu_key:
+    - network.interface.mtu

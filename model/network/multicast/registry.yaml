@@ -1,0 +1,205 @@
+---
+file_format: definition/2
+
+# network-multicast — the IP multicast forwarding plane (PIM / IGMP / MLD),
+# promoted from the `pim`/`igmp` protocol-name tokens.
+#
+# No new entity (the unicast-routing model). Multicast runs INSIDE a VRF
+# (network.instance), forms PIM adjacencies (network.neighbor protocol=pim —
+# already authored, already in the state table), and learns group
+# membership per interface (network.interface). So this package is METRICS +
+# ATTRIBUTES on existing entities, exactly as `network.routing.route.count` minted no
+# route entity. The mroute is a COUNT + record.
+#
+# Two use cases, one plane:
+#   - DC fabric: BUM replication (ingress-replication vs underlay
+#     multicast) — the flood plane that carries broadcast ARP / IPv6 ND / DHCP.
+#   - L3 switch: native (S,G)/(*,G) routing, RPF, RP, IGMP/MLD
+#     membership, the querier role.
+#
+# Elected roles (querier, PIM DR) are ROLE attributes, never health states. Anycast-RP is a shared identity (never reconcile on the
+# shared RP address). The BUM flood list is a discovered-peer set → dimension /
+# record, never N tunnel entities, tied to EVPN Type-3.
+#
+# Prior art: RFC 7761 (PIM-SM), RFC 3973 (PIM-DM), RFC 5015 (BIDIR-PIM),
+# RFC 4607 (SSM), RFC 3376 (IGMPv3), RFC 3810 (MLDv2), RFC 3618 (MSDP),
+# RFC 7432/8365 (EVPN BUM); openconfig-network-instance pim/igmp/mldsnooping;
+# PIM-STD-MIB / IGMP-STD-MIB / IPMROUTE-STD-MIB.
+
+attributes:
+- key: network.multicast.route.type
+  type:
+    members:
+    - id: sg
+      value: "sg"
+      brief: >
+        A source-specific `(S,G)` entry — the shortest-path tree for one (source, group) pair.
+      stability: development
+    - id: star_g
+      value: "star_g"
+      brief: >
+        A shared-tree `(*,G)` entry — the RP-rooted tree for a group, any source.
+      stability: development
+  stability: development
+  brief: >
+    Whether a multicast route is a source-specific `(S,G)` or shared-tree `(*,G)` entry.
+  note: >
+    The mroute (multicast RIB/FIB) is distinct from the unicast RIB. Per-`(S,G)` forwarding flags (SPT/RPT, pruned, RPF interface) and per-entry packet counters are high-cardinality RECORD detail (the cardinality firewall), never metric dimensions; this dimension partitions only the bounded count.
+
+- key: network.multicast.membership.protocol
+  type:
+    members:
+    - id: igmp
+      value: "igmp"
+      brief: IGMP (IPv4 group membership).
+      stability: development
+    - id: mld
+      value: "mld"
+      brief: MLD (IPv6 group membership).
+      stability: development
+  stability: development
+  brief: >
+    The group-membership protocol a membership count is reported for.
+  note: >
+    IGMP for IPv4, MLD for IPv6. The protocol VERSION (IGMPv2/v3, MLDv1/v2) is deferred — add `network.multicast.membership.version` only if a use case needs it.
+
+# --- Membership-report record fields (IGMPv3 RFC 3376 / MLDv2 RFC 3810) -
+# The MEMBERSHIP sub-family of the third category: a receiver
+# entered/left a group. NOT a move (nothing changed locator) and NOT a
+# state-change (no durable entity transitioned) — a record carrying per-object
+# identity (the group, the source). Carried on `network.multicast.membership.changed`.
+- key: network.multicast.group.address
+  type: string
+  stability: development
+  brief: >
+    The multicast group (G) a membership-change record is about — the group joined or left.
+  note: >
+    A RECORD field (per-group, high cardinality) — MUST NOT be a metric dimension (the cardinality firewall; the bounded occupancy is the `network.multicast.group.count` gauge). IPv4 (224/4) or IPv6 (ff00::/8).
+  examples: ["239.1.1.1", "ff0e::1"]
+
+- key: network.multicast.source.address
+  type: string
+  stability: development
+  brief: >
+    For a source-filtered (IGMPv3/MLDv2 / SSM) membership: the source (S) the receiver expressed interest in. Absent for any-source `(*,G)` membership.
+  note: >
+    The `(S,G)` source of the membership (RFC 4607 SSM). Record field only, never a metric dimension.
+  examples: ["192.0.2.10", "2001:db8::a"]
+
+- key: network.multicast.membership.action
+  type:
+    members:
+    - id: join
+      value: "join"
+      brief: The receiver joined the group (a new/refreshed membership).
+      stability: development
+    - id: leave
+      value: "leave"
+      brief: The receiver left the group (membership withdrawn / timed out).
+      stability: development
+  stability: development
+  brief: >
+    Whether a membership-change record is a join or a leave.
+  note: >
+    The direction of the IGMPv3/MLDv2 membership transition — a filter change toward interest (`join`) or away from it (`leave`).
+
+- key: network.multicast.membership.filter_mode
+  type:
+    members:
+    - id: include
+      value: "include"
+      brief: INCLUDE mode — interest is limited to the listed source(s).
+      stability: development
+    - id: exclude
+      value: "exclude"
+      brief: EXCLUDE mode — interest is all sources except the listed one(s).
+      stability: development
+  stability: development
+  brief: >
+    The IGMPv3 / MLDv2 source-filter mode of the membership (RFC 3376 / 3810).
+  note: >
+    Opt-in; absent for IGMPv2/MLDv1 any-source membership. Pairs with `network.multicast.source.address` to express source-filtered interest.
+
+# --- Elected roles (roles, NOT health states) -----------------
+- key: network.multicast.querier
+  type:
+    members:
+    - id: querier
+      value: "querier"
+      brief: This device is the elected IGMP/MLD querier on the segment.
+      stability: development
+    - id: non_querier
+      value: "non_querier"
+      brief: >
+        Another device is the querier; this device defers (a healthy, intentional role — not a fault).
+      stability: development
+  stability: development
+  brief: >
+    The device's elected IGMP/MLD querier role on an interface/segment.
+  note: >
+    An ELECTED ROLE, never a health state. Carried as an attribute, and reportable as an enum-as-attribute gauge on `network.interface`. Mapping it onto `network.neighbor.state` (up/down) would be wrong, the same lesson as OSPF `2-Way` and STP `blocking`.
+
+- key: network.multicast.pim.dr
+  type: boolean
+  stability: development
+  brief: >
+    Whether this device is the PIM Designated Router (DR) on the interface.
+  note: >
+    An elected role, an attribute on the PIM-enabled `network.interface` — not a `network.neighbor.state`. The PIM adjacency itself is a `network.neighbor` (`protocol=pim`); the DR election is a per-segment role on top of it.
+
+# --- Rendezvous point (a role/relationship, not a heavy entity) --------
+- key: network.multicast.rp.address
+  type: string
+  stability: development
+  brief: >
+    The Rendezvous Point (RP) address for a group / group-range.
+  note: >
+    The RP roots the shared `(*,G)` tree (PIM-SM/BIDIR). A control-plane role carried as an attribute, not an entity (few per domain). For Anycast-RP the SAME address is deliberately shared across multiple devices — a shared identity: it MUST NOT be used as a reconciliation/identity key.
+  examples: ["10.0.0.1", "2001:db8::1"]
+
+- key: network.multicast.rp.type
+  type:
+    members:
+    - id: static
+      value: "static"
+      brief: Statically configured RP.
+      stability: development
+    - id: bsr
+      value: "bsr"
+      brief: RP learned via the PIM Bootstrap Router mechanism.
+      stability: development
+    - id: auto_rp
+      value: "auto_rp"
+      brief: RP learned via Cisco Auto-RP.
+      stability: development
+    - id: embedded
+      value: "embedded"
+      brief: Embedded-RP (IPv6, RP address encoded in the group address).
+      stability: development
+    - id: anycast
+      value: "anycast"
+      brief: >
+        Anycast-RP — the RP address is shared across multiple devices (typically MSDP-synced) for load-sharing/redundancy. A shared identity.
+      stability: development
+  stability: development
+  brief: How the RP for a group/group-range was learned/configured.
+
+# --- BUM replication (the fabric half) ------------------------------
+- key: network.multicast.bum.mode
+  type:
+    members:
+    - id: ingress_replication
+      value: "ingress_replication"
+      brief: >
+        Head-end replication — the local VTEP sends one unicast copy per remote VTEP; the peer set is learned from EVPN Type-3 (IMET).
+      stability: development
+    - id: multicast
+      value: "multicast"
+      brief: >
+        Underlay multicast — BUM is carried on an underlay multicast group mapped from the VNI (PIM in the underlay).
+      stability: development
+  stability: development
+  brief: >
+    How Broadcast/Unknown-unicast/Multicast (BUM) traffic is delivered for an overlay segment (VNI).
+  note: >
+    An attribute on the `l2vsi`/VNI (`network.instance`) or the VTEP (`network.tunnel`). BUM carries broadcast ARP, IPv6 ND, and DHCP — the tie between the multicast plane and the ARP/ND resolution table (network-l3). For `ingress_replication` the flood list (remote VTEPs) is a discovered-peer set → metric dimension / record, NEVER N tunnel entities, tied to EVPN Type-3. For `multicast` the VNI→underlay-group mapping is the relevant descriptor.

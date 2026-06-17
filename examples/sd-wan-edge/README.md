@@ -205,7 +205,7 @@ optic underneath, so the entire `network.optical.*` plane is **n/a**.
 
 State and counters map exactly as on the
 [CPE WAN interfaces](../cpe-router/README.md#4-interfaces) (`network.interface.io` /
-`packets` / `errors` / `oper_state` / `mtu`) — the boring, carried-over part. The
+`packets` / `errors` / `network.interface.oper.state` / `mtu`) — the boring, carried-over part. The
 SD-WAN-specific bit — the **transport color** — is not an interface attribute; it lives
 on the overlay endpoint the interface anchors (§6).
 
@@ -280,7 +280,7 @@ and vManage (NMS).
 | OMP peering to vSmart | `network.neighbor` `protocol=omp`* (scoped to VPN 0) | vManage / device |
 | Control-connection state up/down | `network.neighbor.state` = `up` + `native_state` (`up`/`connect`/`challenge`) | DTLS control-connection FSM |
 | Control-connection / OMP transitions | `network.neighbor.state_changes` + `network.state.changed` *(event)* | vManage event log |
-| Routes/TLOCs learned via OMP | `network.routing.routes` (`route.state` received/active/fib) on VPN 0 | OMP route table |
+| Routes/TLOCs learned via OMP | `network.routing.route.count` (`route.state` received/active/fib) on VPN 0 | OMP route table |
 
 > **`omp` is not (yet) an enum value — and it is proprietary.** The authored
 > `network.neighbor.protocol` enum is `bgp`/`ospf`/`isis`/`eigrp`/`bfd`/`lacp`/`lldp`/
@@ -289,7 +289,7 @@ and vManage (NMS).
 > with the verbatim controller state in `native_state`, and put any OMP internals in the
 > vendor namespace (`cisco.*`, keyed off `network.device.vendor.name`) — the
 > [proprietary-protocol path](../../docs/conventions.md#naming-rules). The OMP **session
-> to a controller** is also not a router-to-router adjacency; the `asn`/`address` fields
+> to a controller** is also not a router-to-router adjacency; the `as.number`/`address` fields
 > of `network.neighbor` do not apply, and the controller-session attributes
 > (controller-type, org-id, DTLS state, preference) have no dedicated home — a known
 > limitation shared with every controller-fronted protocol (§11).

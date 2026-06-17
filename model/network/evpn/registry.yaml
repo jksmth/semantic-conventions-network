@@ -1,0 +1,135 @@
+---
+file_format: definition/2
+
+# network-evpn — the BGP-EVPN route/signalling + multi-homing layer.
+#
+# The overlay *context* (the EVI as a `network.instance` of type l2vsi/l2l3, its
+# `vni`, RD/RT, and the `control_plane` MAC/ARP-ND entry types) is already
+# authored and is the model's best fit. What was
+# missing is the EVPN *control plane*: the route TYPES (T1-T5) and the
+# multi-homing (Ethernet Segment / DF) that make a stack of leaves a fabric.
+#
+# EVPN is NOT a protocol value and NOT an address family of its own:
+# it is BGP (`network.neighbor.protocol=bgp`) carrying the `l2vpn_evpn`
+# `network.address_family`. `network.evpn.*` is therefore the *route/signalling*
+# layer that rides on top of that neighbour + family — the cut beneath
+# `address_family=l2vpn_evpn`, not a competing classifier.
+#
+# The Type-2 dual-population (the L2/L3 analogue of the SRv6 fusion): a single
+# Type-2 (MAC/IP) advertisement is the shared *control-plane*
+# source of THREE already-authored counters — `network.l2.fdb.entry.count`
+# (entry.type=control_plane, the MAC-VRF / L2), `network.l3.arpnd.entry.count`
+# (entry.type=control_plane, the ARP/ND binding / L2-L3), and, when it carries a
+# host route, the IP-VRF `network.routing.route.count` (L3). The model keeps L2 and L3
+# in separate boxes by design; we DOCUMENT the fusion and relate
+# the three via the shared EVI `network.instance` + id, the typed "one object,
+# three tables" association deferred to the OTel edge model. No new metric is
+# minted for the dual-population — the `control_plane` rows already carry it.
+#
+# Multi-homing: the Ethernet Segment is a
+# FABRIC-WIDE shared id (`network.evpn.esi`) carried by every leaf attached to the
+# multi-homed segment — membership-by-reference, so "the leaves
+# of this dual-homed bond" is a query over the ESI, with no cross-chassis LAG
+# entity. The proprietary, non-EVPN face of the same pair (MLAG/vPC domain,
+# peer-link) is `network.redundancy.*`; an ESI-LAG on an MLAG pair
+# carries both. The Designated Forwarder is an ELECTED ROLE, never a health state.
+#
+# Deferred (NOT blockers): EVPN events (MAC mobility / VM move, DF change,
+# ES up/down) with the shared event-envelope package, designed with the
+# attachment-point-move family; per-(ES,EVI) and per-route
+# detail as records; rich relationship typing.
+#
+# Prior art: RFC 7432 (BGP MPLS-Based EVPN — route types 1-5, ESI, DF election),
+# RFC 8365 (EVPN-VXLAN), RFC 9135 (EVPN IRB / Type-2 MAC+IP), RFC 8584 (DF
+# election), `openconfig-network-instance` (evpn).
+
+attributes:
+# --- Route type (the cut beneath address_family=l2vpn_evpn) -------------
+- key: network.evpn.route_type
+  type:
+    members:
+    - id: ethernet_ad
+      value: "ethernet_ad"
+      brief: >
+        Type-1 Ethernet Auto-Discovery (per-ES / per-EVI). Multi-homing signalling + fast mass-withdraw on a segment failure.
+      stability: development
+    - id: mac_ip
+      value: "mac_ip"
+      brief: >
+        Type-2 MAC/IP advertisement — the workhorse. Carries a MAC and optionally an IP, so one advertisement populates BOTH the MAC-VRF (L2) and the ARP/ND + host-route tables (L3): the dual-population rule (see the registry header). Type-2 churn = MAC mobility / a moving or flapping VM.
+      stability: development
+    - id: imet
+      value: "imet"
+      brief: >
+        Type-3 Inclusive Multicast Ethernet Tag (IMET) — how a VTEP advertises "send me BUM for this VNI". Builds the ingress- replication flood list (the discovered-peer set carried as a dimension/record). imet churn = BUM mesh membership.
+      stability: development
+    - id: ethernet_segment
+      value: "ethernet_segment"
+      brief: >
+        Type-4 Ethernet Segment route — ES discovery and Designated Forwarder election among the leaves sharing an `network.evpn.esi`.
+      stability: development
+    - id: ip_prefix
+      value: "ip_prefix"
+      brief: >
+        Type-5 IP Prefix route — pure L3 reachability (external / summarised prefixes), the closest EVPN type to "just a route".
+      stability: development
+  stability: development
+  brief: >
+    The BGP-EVPN route type (RFC 7432 / RFC 9136), the structural cut beneath `network.address_family=l2vpn_evpn`.
+  note: >
+    Open enum, lowercase, custom values MAY be used (e.g. Type-6/7/8 SMET / multicast-join routes). EVPN itself is BGP + the `l2vpn_evpn` address family; this names the *kind* of EVPN object within that family, so the three operator signals it otherwise hides are visible: mac_ip churn (MAC mobility), imet (BUM membership), ip_prefix (external reachability).
+
+# --- Multi-homing / Ethernet Segment -----------------------------------
+- key: network.evpn.esi
+  type: string
+  stability: development
+  brief: >
+    Ethernet Segment Identifier (RFC 7432) — the fabric-wide id of a multi-homed segment (e.g. a server bond landing on two leaves).
+  note: >
+    A membership-by-reference id: every leaf attached to the segment emits its local member interface carrying the same `network.evpn.esi`, so the set of leaves multi-homing a bond is a query over the ESI — no cross-chassis LAG entity is minted (the single-device LAG bundle internals are a separate deferred concern on `network.lag`). The all-zero ESI (single-homed) is normally omitted. Carried in the standard 10-octet colon-separated form.
+  examples: ["00:11:22:33:44:55:66:77:88:99", "01:ab:cd:00:00:00:00:00:00:01"]
+
+- key: network.evpn.previous_esi
+  type: string
+  stability: development
+  brief: >
+    For a `network.evpn.mac.moved` record: the Ethernet Segment a MAC was attached to BEFORE the move (RFC 7432 §7.7 MAC mobility). The current segment is the reused `network.evpn.esi`.
+  note: >
+    The previous-locator half of the EVPN move record, so "MAC X moved from ESI A to ESI B" is fully expressed — the fabric-scoped sibling of `network.l2.mac.previous_interface.name`. Same 10-octet colon-separated form as `network.evpn.esi`. Record-level metadata only.
+  examples: ["00:11:22:33:44:55:66:77:88:99"]
+
+- key: network.evpn.multihoming
+  type:
+    members:
+    - id: single_active
+      value: "single_active"
+      brief: >
+        Single-active redundancy — only one leaf in the segment forwards for a given VLAN at a time.
+      stability: development
+    - id: all_active
+      value: "all_active"
+      brief: >
+        All-active redundancy — every leaf in the segment forwards concurrently (the common ESI-LAG / MLAG case).
+      stability: development
+  stability: development
+  brief: >
+    The redundancy mode of the Ethernet Segment (RFC 7432).
+  note: >
+    Open enum, lowercase. Reported on a leaf's member interface for the `network.evpn.esi` it belongs to.
+
+- key: network.evpn.df_role
+  type:
+    members:
+    - id: df
+      value: "df"
+      brief: This leaf is the Designated Forwarder for the (ES, VLAN/EVI).
+      stability: development
+    - id: non_df
+      value: "non_df"
+      brief: This leaf is a non-Designated-Forwarder for the (ES, VLAN/EVI).
+      stability: development
+  stability: development
+  brief: >
+    The Designated Forwarder election result for this leaf on an Ethernet Segment (RFC 7432 / RFC 8584).
+  note: >
+    An ELECTED ROLE, never a health state: a non_df leaf is healthy and intentional, so this is NOT folded into any `state` enum. The DF election is per (ES, VLAN/EVI); a leaf may be DF for some VLANs and non_df for others. Reportable as an enum-as-attribute gauge if a time-series of DF changes is wanted; the DF-change event defers to the event package.

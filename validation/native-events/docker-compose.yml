@@ -1,0 +1,48 @@
+# Events lane: SR Linux syslog -> otelcol [syslogreceiver + OTTL] -> weaver.
+# SR Linux + srlmgmt are created by containerlab (run-events.sh). The collector
+# takes a fixed IP so SR Linux's remote-syslog target is stable.
+name: netlab-events
+
+services:
+  weaver-livecheck:
+    image: ${WEAVER_IMAGE:-otel/weaver:latest}
+    container_name: ev-weaver
+    working_dir: /work
+    volumes:
+      - ../..:/work:ro
+      - ./out:/out
+    networks: [srlmgmt]
+    command:
+      - registry
+      - live-check
+      - -r
+      - model
+      - --input-source
+      - otlp
+      - --otlp-grpc-address
+      - 0.0.0.0
+      - --otlp-grpc-port
+      - "4317"
+      - --inactivity-timeout
+      - "0"
+      - --format
+      - json
+      - --output
+      - /out
+
+  otelcol:
+    image: ${OTELCOL_IMAGE:-otel/opentelemetry-collector-contrib:latest}
+    container_name: ev-otelcol
+    depends_on: [weaver-livecheck]
+    environment:
+      WEAVER_ENDPOINT: ev-weaver:4317
+    volumes:
+      - ./otelcol-events.yaml:/etc/otelcol-contrib/config.yaml:ro
+    networks:
+      srlmgmt:
+        ipv4_address: 172.22.22.100 # SR Linux remote-syslog target
+
+networks:
+  srlmgmt:
+    name: srlmgmt
+    external: true

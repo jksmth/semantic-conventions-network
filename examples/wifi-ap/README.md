@@ -71,13 +71,13 @@ graph TD
     APSTATE["network.wifi.ap.state<br/>discovering -> joining -> run"]
     ETH["network.interface eth0<br/>(PoE uplink · poe.role=pd)"]
 
-    R0["network.wifi.radio 2.4GHz<br/>channel · width · tx_power · airtime"]
+    R0["network.wifi.radio 2.4GHz<br/>channel · width · transmit_power · airtime"]
     R1["network.wifi.radio 5GHz"]
     BSSC["network.wifi.bss Corp<br/>bssid · ssid · security · vlan=10"]
     BSSG["network.wifi.bss Guest<br/>vlan=20"]
 
     CELL["network.link point_to_multipoint<br/>link.id = BSSID (the RF cell)"]
-    STA["network.wifi.bss.stations COUNT<br/>+ station.mac/rssi/snr RECORD"]
+    STA["network.wifi.bss.station.count COUNT<br/>+ station.mac/rssi/snr RECORD"]
 
     WLC --> OBS
     WLC --> AAA
@@ -133,7 +133,7 @@ signal those cannot express. A tri-band AP has three radio entities.
 | Channel / width | `network.wifi.radio.channel` / `.channel.width` (MHz) | vendor radio-MIB | `.Channel` / `.OperatingChannelBandwidth` |
 | 802.11 generation | `network.wifi.radio.standard` (`802.11ax`, `802.11be`, …) | vendor radio-MIB | `.OperatingStandards` |
 | Radio role(s) | `network.wifi.radio.mode` (`ap`/`sta`/`mesh`/`monitor`/`sensor`) | vendor radio-MIB | `oc-wifi` phy |
-| Transmit power | `network.wifi.radio.tx_power` (`dB[mW]` = dBm) | vendor radio-MIB | `Device.WiFi.Radio.TransmitPower` |
+| Transmit power | `network.wifi.radio.transmit_power` (`dB[mW]` = dBm) | vendor radio-MIB | `Device.WiFi.Radio.TransmitPower` |
 | Noise floor | `network.wifi.radio.noise_floor` (`dB[mW]`) | vendor radio-MIB | `oc-wifi` phy |
 | **Airtime utilisation** | `network.wifi.radio.airtime.utilization` (+ `network.wifi.airtime.type` = `busy`/`tx`/`rx`/`interference`) | vendor radio-MIB | `.Stats.ChannelUtilization` |
 | RF retries | `network.wifi.radio.retries` (+ `network.io.direction`) | vendor radio-MIB | `.Stats.*Retrans*` |
@@ -181,12 +181,12 @@ the same answer the [BNG gives for subscribers](../bng/README.md#3-the-cardinali
 
 | What | `network.*` | SNMP | TR-181 / OpenConfig |
 |------|-------------|------|---------------------|
-| Associated-client count | `network.wifi.bss.stations` (per BSS) | vendor BSS-MIB | `Device.WiFi.AccessPoint.AssociatedDeviceNumberOfEntries` |
+| Associated-client count | `network.wifi.bss.station.count` (per BSS) | vendor BSS-MIB | `Device.WiFi.AccessPoint.AssociatedDeviceNumberOfEntries` |
 | Station MAC | `network.wifi.station.mac` (**record field**, not a dimension) | — | `Device.WiFi.AccessPoint.AssociatedDevice.MACAddress` |
 | Per-station RSSI | `network.wifi.station.rssi` (`dB[mW]`, record) | — | `.AssociatedDevice.SignalStrength` |
 | Per-station SNR | `network.wifi.station.snr` (`dB`, record) | — | `.AssociatedDevice.*SNR*` |
 
-`network.wifi.bss.stations` is the low-cardinality count — "how many clients are on this
+`network.wifi.bss.station.count` is the low-cardinality count — "how many clients are on this
 BSS" — and, compared against the radio's max-client ceiling, the
 association-table-fill signal (a packed lecture hall exhausts the table while CPU looks
 idle). All per-station detail (`station.mac`, `rssi`, `snr`) rides records, **never**
@@ -263,7 +263,7 @@ Deliberately out of scope, to keep the boundaries honest:
   transitions are deferred to the events package. A **roam** is designed there as
   "identity X moved from attachment point A to B" — the same shape as switch MAC-move,
   L3 MAC-move, and EVPN MAC-mobility (`network.wifi.station.previous_bss.bssid` is the
-  RF sibling of `network.l2.mac.previous_interface.id`), so it lands as one member of a
+  RF sibling of `network.l2.mac.previous_interface.name`), so it lands as one member of a
   unified attachment-point-move family, not a one-off.
 - **The ESS / SSID as a first-class entity** — an SSID spans many BSSes across many APs
   and is not device-scoped, so it is carried as the `network.wifi.bss.ssid` descriptor

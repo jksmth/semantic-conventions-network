@@ -74,9 +74,9 @@ graph TD
 
     VTEP["network.tunnel type=vxlan<br/>source=lo1 · underlay.instance=default"]
 
-    MACT["network.l2.mac.entries<br/>entry.type=control_plane"]
-    ADJ["network.l3.adjacency.entries<br/>entry.type=control_plane"]
-    RT["network.routing.routes<br/>host /32 or /128"]
+    MACT["network.l2.fdb.entry.count<br/>entry.type=control_plane"]
+    ADJ["network.l3.arpnd.entry.count<br/>entry.type=control_plane"]
+    RT["network.routing.route.count<br/>host /32 or /128"]
 
     REDUN["network.redundancy.group<br/>type=mlag · address.role=anycast"]
     ESILAG["network.lag (ESI-LAG)<br/>evpn.esi + redundancy.group.id"]
@@ -124,8 +124,8 @@ with the L2 and combined types.
 |------|-------------|------|------------|
 | Forwarding context | `network.instance` (+ `type`) | `mplsL3VpnVrfTable` / vendor EVPN-MIB | `/network-instances/network-instance` |
 | VNI binding | `network.instance` VNI / `network.tunnel.vni` | vendor VXLAN-MIB | `.../config/vni` |
-| Per-MAC-VRF MAC occupancy | `network.l2.mac.entries` (+ `network.l2.mac.entry.type=control_plane`) | `dot1qTpFdbTable` | `.../fdb/mac-table` |
-| ARP/ND cache (the L2↔L3 binding) | `network.l3.adjacency.entries` (+ `entry.type=control_plane`, `adjacency.state`) | `ipNetToPhysicalTable` | `.../neighbors/neighbor` |
+| Per-MAC-VRF MAC occupancy | `network.l2.fdb.entry.count` (+ `network.l2.fdb.entry.type=control_plane`) | `dot1qTpFdbTable` | `.../fdb/mac-table` |
+| ARP/ND cache (the L2↔L3 binding) | `network.l3.arpnd.entry.count` (+ `entry.type=control_plane`, `adjacency.state`) | `ipNetToPhysicalTable` | `.../neighbors/neighbor` |
 
 `entry.type=control_plane` is the marker that distinguishes an EVPN-learned MAC/ARP
 entry from a data-plane-learned one — the operator's "is this from BGP or from the
@@ -142,11 +142,11 @@ family and instance.
 | What | `network.*` | SNMP | OpenConfig |
 |------|-------------|------|------------|
 | Underlay BGP to each spine | `network.neighbor` `protocol=bgp` (AF `ipv4_unicast`) | BGP4-MIB | `/.../protocols/protocol[BGP]/.../neighbors` |
-| Underlay route count | `network.routing.routes` (`ipv4_unicast`) on `default` | `bgp4PathAttrTable` | `/.../bgp-rib` |
+| Underlay route count | `network.routing.route.count` (`ipv4_unicast`) on `default` | `bgp4PathAttrTable` | `/.../bgp-rib` |
 | Overlay (EVPN) BGP to RR | `network.neighbor` `protocol=bgp`, AF `l2vpn_evpn` | BGP4-MIB | `/.../afi-safis/afi-safi[L2VPN_EVPN]` |
 | Underlay vs overlay | distinguished by `network.address_family` + `network.instance` | — | — |
 
-> **ECMP fan-out is modelled** as `network.routing.ecmp.routes` — FIB routes bucketed by
+> **ECMP fan-out is modelled** as `network.routing.ecmp.route.count` — FIB routes bucketed by
 > `network.routing.ecmp.width` (and `network.address_family`). The 4-way ECMP to each
 > VTEP is the spine layer's entire purpose, so "did losing spine-3 rebalance the paths?"
 > is now derivable: routes drain from the `width=4` bucket into `width=3`. Per-member
@@ -165,7 +165,7 @@ signals that a flat route count hides.
 | What | `network.*` | SNMP | OpenConfig |
 |------|-------------|------|------------|
 | EVPN route type (T1–T5) | `network.evpn.route_type` = `ethernet_ad`/`mac_ip`/`imet`/`ethernet_segment`/`ip_prefix` | vendor EVPN-MIB | `oc-network-instance` evpn |
-| EVPN route counts by type | `network.evpn.routes` (+ `route_type`, `network.routing.route.state`) | vendor EVPN-MIB | EVPN RIB counters |
+| EVPN route counts by type | `network.evpn.route.count` (+ `route_type`, `network.routing.route.state`) | vendor EVPN-MIB | EVPN RIB counters |
 
 The three signals: **`mac_ip` churn = MAC mobility** (a moving/flapping VM), **`imet` =
 BUM mesh membership**, **`ip_prefix` = external reachability**.
@@ -176,13 +176,13 @@ A single **Type-2 (`mac_ip`)** advertisement is the shared control-plane source 
 ```mermaid
 graph LR
     T2["EVPN Type-2 (mac_ip)<br/>network.evpn.route_type=mac_ip"]
-    T2 --> L2["network.l2.mac.entries<br/>entry.type=control_plane (L2)"]
-    T2 --> L3["network.l3.adjacency.entries<br/>entry.type=control_plane (ARP/ND)"]
-    T2 --> RIB["network.routing.routes<br/>host /32 or /128 (L3)"]
+    T2 --> L2["network.l2.fdb.entry.count<br/>entry.type=control_plane (L2)"]
+    T2 --> L3["network.l3.arpnd.entry.count<br/>entry.type=control_plane (ARP/ND)"]
+    T2 --> RIB["network.routing.route.count<br/>host /32 or /128 (L3)"]
 ```
 
 These three are **related by their shared EVI `network.instance`, never
-triple-counted** — the same typed-slice discipline that keeps `network.evpn.routes`
+triple-counted** — the same typed-slice discipline that keeps `network.evpn.route.count`
 out of the unicast RIB. The "one advertisement, three tables" relation is documented;
 the typed edge between them is deferred to the OTel entity model.
 
@@ -265,9 +265,9 @@ plane.
 |------|-------------|------|------------|
 | BUM replication mode | `network.multicast.bum.mode` = `ingress_replication`/`multicast` (on the VNI/VTEP) | vendor EVPN-MIB | evpn BUM config |
 | Ingress-replication flood list | discovered-peer set → dimension/record (tied to EVPN Type-3) | vendor VXLAN peer table | — |
-| Underlay multicast mroutes | `network.multicast.routes` (+ `route.type` sg/star_g, AF) | IPMROUTE-STD-MIB | `oc-network-instance` mroutes |
+| Underlay multicast mroutes | `network.multicast.route.count` (+ `route.type` sg/star_g, AF) | IPMROUTE-STD-MIB | `oc-network-instance` mroutes |
 | PIM neighbour / DR | `network.neighbor` `protocol=pim` + `network.multicast.pim.dr` | PIM-STD-MIB | `.../pim/neighbors` |
-| IGMP/MLD membership | `network.multicast.groups` (+ `membership.protocol`) | IGMP-STD-MIB | `.../igmp` |
+| IGMP/MLD membership | `network.multicast.group.count` (+ `membership.protocol`) | IGMP-STD-MIB | `.../igmp` |
 | RPF failures | `network.multicast.rpf_failures` | IPMROUTE-STD-MIB | mroute RPF drops |
 | Querier role | `network.multicast.querier` (elected role) | IGMP-STD-MIB | igmp querier |
 
@@ -298,7 +298,7 @@ telemetry attaches to it.
 Deliberately out of scope, to keep the boundaries honest:
 
 - **ECMP per-member load-balance imbalance** — path *count* is now modelled
-  (`network.routing.ecmp.routes` by width, §4); per-member traffic skew across a group's
+  (`network.routing.ecmp.route.count` by width, §4); per-member traffic skew across a group's
   members is read from `network.interface.io`, not a dedicated routing metric.
 - **EVPN / VTEP / MLAG / DF events** — MAC mobility (VM move), VTEP up/down, MLAG
   peer-link down / split-brain, DF change, BUM storm. The reconstructable counters and

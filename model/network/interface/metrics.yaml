@@ -1,0 +1,310 @@
+---
+file_format: definition/2
+metrics:
+- name: network.interface.io
+  stability: development
+  brief: >
+    Total bytes transmitted or received on the interface.
+  note: >
+    Aligns with `system.network.io` and `k8s.pod.network.io`: one metric with `network.io.direction` as the dimension, not separate rx/tx names. Monotonically increasing (counter wraps handled by the backend).
+  instrument: counter
+  unit: "By"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  entity_associations:
+  - network.interface
+
+- name: network.interface.packets
+  stability: development
+  brief: >
+    Total packets transmitted or received on the interface.
+  note: >
+    `network.packet.type` optionally partitions the count into unicast / multicast / broadcast — the IF-MIB `ifHC{In,Out}{Ucast,Multicast,Broadcast}Pkts` split and OpenConfig `{in,out}-{unicast,multicast,broadcast}-pkts`. When absent, the counter is all packets.
+  instrument: counter
+  unit: "{packet}"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  - ref: network.packet.type
+    requirement_level: opt_in
+  entity_associations:
+  - network.interface
+
+- name: network.interface.errors
+  stability: development
+  brief: >
+    Total errored packets on the interface.
+  note: >
+    Includes CRC, frame, runts, giants, and other L1/L2 errors. `error.type` provides optional further classification.
+  instrument: counter
+  unit: "{error}"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  - ref: error.type
+    requirement_level: opt_in
+  entity_associations:
+  - network.interface
+
+- name: network.interface.discards
+  stability: development
+  brief: >
+    Total packets discarded (dropped) on the interface.
+  note: >
+    Packets dropped due to queue overflow, policy, rate limiting, etc. Not errored — discards are intentional drops by the device. `network.packet.type` optionally partitions the count by unicast / multicast / broadcast where the device reports per-cast drops; `network.packet.drop.reason` optionally partitions it by drop cause (no_route / acl_deny / policy / congestion / …) where the datapath exposes per-reason discard counters (ASIC/SONiC/eBPF) — omitted for unattributed SNMP/OpenConfig discards.
+  instrument: counter
+  unit: "{packet}"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  - ref: network.packet.type
+    requirement_level: opt_in
+  - ref: network.packet.drop.reason
+    requirement_level: opt_in
+  entity_associations:
+  - network.interface
+
+- name: network.interface.speed
+  stability: development
+  brief: >
+    The current operational link speed of the interface.
+  note: |
+    The gauge metric representing the *live operational* speed. May differ
+    from the `network.interface.speed` entity attribute (configured/
+    negotiated speed) when a link degrades, autoneg settles lower, or a
+    LAG loses members.
+
+    Comparing metric vs attribute surfaces speed-mismatch faults.
+    Always `bit/s`, never `By/s`.
+  instrument: gauge
+  unit: "bit/s"
+  entity_associations:
+  - network.interface
+
+# --- Interface admin/oper state (RFC 2863 ifAdminStatus / ifOperStatus) ----
+# The current-state half of the state-modelling pattern (docs/conventions.md)
+# at the interface grain: a value-always-1 UpDownCounter carrying the state as
+# an enum attribute (the K8s status.phase / system.network.interface.status
+# idiom), so a `sum` counts interfaces per state — "how many interfaces are
+# down on this device". The transition is `network.interface.state.changed`;
+# the verbatim vendor term rides `network.native_state`.
+#
+# These are SUBJECT-SCOPED (network.interface.*) rather than reusing the
+# hardware-entity `network.admin.status`/`network.oper.status`: a status
+# series is identified by name + attributes + entity, so a subject-scoped name
+# keeps `sum(...{oper.state="down"})` unambiguous (down interfaces, not down
+# interfaces + down chassis added together). This mirrors upstream
+# `system.network.interface.status` and the K8s `k8s.pod.status.phase` subject
+# naming. The state ENUM is the interface-plane `network.interface.oper.state` /
+# `network.interface.admin.state` (RFC 2863 IF-MIB up/down + dormant/
+# lower_layer_down/not_present) — a DIFFERENT value space from the X.731
+# hardware-entity `network.oper.state`/`network.admin.state`, kept separate so a
+# `sum by (state)` never mixes `up` with `enabled`.
+#
+# admin (operator intent) and oper (operational capability) are two metrics —
+# orthogonal axes (RFC 2863 ifAdminStatus vs ifOperStatus), and `sum` per state
+# is only meaningful within one axis.
+
+- name: network.interface.admin.status
+  stability: development
+  brief: >
+    The administrative state of the interface — value always 1, the state carried in `network.interface.admin.state`.
+  note: >
+    The RFC 2863 IF-MIB `ifAdminStatus` (RFC 8343 `admin-status`) as a status metric: one series per `network.interface.admin.state` value, value 1 for the interface's current administrative state (the K8s `status.phase` pattern, as `system.network.interface.status`). Operator INTENT, not health — `down` is an operator-shut interface regardless of its operational capability or the health of the hardware beneath it. References the interface-plane `network.interface.admin.state` attribute (distinct from the X.731 hardware-entity `network.admin.state`). Pairs with the `network.interface.state.changed` event (administrative).
+  instrument: updowncounter
+  unit: "1"
+  attributes:
+  - ref: network.interface.admin.state
+    requirement_level: recommended
+  entity_associations:
+  - network.interface
+
+- name: network.interface.oper.status
+  stability: development
+  brief: >
+    The operational state of the interface — value always 1, the state carried in `network.interface.oper.state`.
+  note: >
+    The RFC 2863 IF-MIB `ifOperStatus` (RFC 8343 `oper-status`) as a status metric: one series per `network.interface.oper.state` value, value 1 for the interface's current operational state. Operational CAPABILITY, not health: comparing `down` here against `network.interface.admin.state` (operator-shut?) and the lower-layer state separates an operator shutdown from a fault or a lower-layer outage. The interface-specific values `dormant`, `lower_layer_down`, and `not_present` are first-class members of the enum so they are not collapsed to a coarse `down`. References the interface-plane `network.interface.oper.state` attribute (distinct from the X.731 hardware-entity `network.oper.state`). Pairs with the `network.interface.state.changed` event (operational).
+  instrument: updowncounter
+  unit: "1"
+  attributes:
+  - ref: network.interface.oper.state
+    requirement_level: recommended
+  entity_associations:
+  - network.interface
+
+- name: network.interface.duplex
+  stability: development
+  brief: >
+    The duplex mode of the interface — value always 1, the mode carried in `network.interface.duplex`.
+  note: >
+    A status metric (the K8s `status.phase` / enum-as-attribute pattern, as `network.interface.admin.status`/`oper.status`): one series per `network.interface.duplex` value, value 1 for the interface's current duplex mode, so a `sum` counts interfaces per mode. A half/full mismatch is a classic L1/L2 fault, which is why duplex is a queryable signal and not only an `info`/entity-description label. The same `network.interface.duplex` attribute is also carried on `network.interface.info` (the entity snapshot) — the deliberate status-metric ↔ info-label dual (kube-state pattern). Relevant on copper Ethernet; omitted on fiber/coherent/wireless/logical interfaces.
+  instrument: updowncounter
+  unit: "1"
+  attributes:
+  - ref: network.interface.duplex
+    requirement_level: required
+  entity_associations:
+  - network.interface
+
+- name: network.interface.last_change
+  stability: development
+  brief: >
+    The time of the interface's most recent operational-state transition, as seconds since the Unix epoch (IF-MIB `ifLastChange`).
+  note: |
+    A gauge, NOT an entity-description label — a timestamp has an effectively
+    unbounded value space, so as a label it would churn the `info` series on
+    every flap and explode cardinality. As a gauge it is the basis for
+    interface-flap detection (a recently-/rapidly-advancing value) and uptime
+    reasoning; the operational state itself is `network.interface.oper.status`.
+
+    The IF-MIB source `ifLastChange` is a `sysUpTime`-relative value; emit it
+    here as an absolute wall-clock timestamp in seconds since the Unix epoch so
+    it aggregates and correlates across devices without reconstructing each
+    device's boot time. Omitted when no operational-state transition has
+    occurred since the interface (or managed system) was re-initialized.
+  instrument: gauge
+  unit: "s"
+  entity_associations:
+  - network.interface
+
+- name: network.interface.poe.power.allocated
+  stability: development
+  brief: >
+    The power the PSE has reserved/allocated to the PoE port, in watts.
+  note: |
+    A gauge (not an attribute) because the primary PoE operational
+    view is aggregate: `sum` of allocated across a switch versus the chassis
+    PoE budget (`hw.power` on the PSE/PSU) is the budget-headroom signal an
+    ops engineer trends and alerts on (e.g. alert at 80% of budget).
+
+    The negotiated reservation the PSE commits against its budget, distinct
+    from the *actual* instantaneous draw (`hw.power`, the FRU fact): in
+    static-budget mode the PSE reserves against `allocated`, so a class-4 AP
+    idling at 8 W still consumes its 30 W reservation. allocated-minus-draw is
+    the per-port reserved-but-idle headroom. Slice by the
+    `network.interface.poe.*` entity facets (priority/class) for budget-by-
+    priority panels.
+  instrument: gauge
+  unit: "W"
+  entity_associations:
+  - network.interface
+
+- name: network.interface.poe.power.requested
+  stability: development
+  brief: >
+    The power the PD requested via LLDP-MED, in watts.
+  note: |
+    A gauge paired with `network.interface.poe.power.allocated`:
+    the request-vs-grant gap (`requested` above `allocated`) is the panel that
+    explains why a PD runs in a reduced-power mode, and `sum` of requested vs
+    the budget is the demand-side capacity view.
+
+    Signalled in the LLDP-MED extended power-via-MDI TLV (ANSI/TIA-1057) \u2014 a
+    network discovery fact tied to the authored `model/lldp/`, which `hw.*`
+    cannot express. Absent when the PD does not run LLDP-MED (basic-
+    classification PoE).
+  instrument: gauge
+  unit: "W"
+  entity_associations:
+  - network.interface
+
+# --- Entity info metric (the Prometheus `target_info` / kube-state `*_info`
+# join pattern) ----------------------------------------------------------
+# The metric-pipeline projection of the `network.interface` entity: a gauge
+# fixed at 1 whose labels MIRROR THE ENTITY DESCRIPTION SET 1:1, the metric
+# twin of the `entity.state` event (model/events) — same attribute set, one
+# carried in the metric signal, the other in the log/event signal. The IDENTITY
+# (`network.device.id` + `network.interface.name`, the device-scoped pair) is
+# REQUIRED and present ON the metric — it is the join key, so it cannot merely
+# ride the Resource. Every DESCRIPTOR attribute of the entity is an opt_in
+# label here (including the state enums admin/oper/poe.state and duplex — those
+# also have their own status metrics; the dual is deliberate, kube-state-style).
+# Only MEASUREMENTS are excluded — counters, continuous-value gauges, and
+# timestamps (e.g. `network.interface.last_change`, now a gauge): they have an
+# unbounded value space that would churn the info series, and they have their
+# own series. Forward-compat: the planned automatic entity -> info projection is
+# expected to project the full description set, so mirroring it here keeps this
+# hand-authored metric aligned with that future shape.
+- name: network.interface.info
+  stability: development
+  brief: >
+    Info metric for `network.interface` (value always 1). Mirrors the interface entity's full description set as labels for JOIN onto operational series on (`network.device.id`, `network.interface.name`) — the Prometheus `target_info` / kube-state-metrics `*_info` pattern.
+  note: >
+    The device-scoped identity (`network.device.id` + `network.interface.name`) is REQUIRED and carried on the metric: it is the join key, not merely a Resource attribute. The remaining labels mirror the `network.interface` entity's description set 1:1 (the metric twin of the `entity.state` event), including the state enums (`network.interface.admin.state`/`network.interface.oper.state`/`network.interface.poe.state`/`network.interface.duplex`) — these deliberately appear BOTH here and as their own status metrics (the kube-state dual). Only measurements are excluded: counters, continuous-value gauges, and timestamps (`network.interface.last_change`) which churn an unbounded value space and have their own series.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.device.id
+    requirement_level: required
+  - ref: network.interface.name
+    requirement_level: required
+  - ref: network.interface.description
+    requirement_level: opt_in
+  - ref: network.interface.type
+    requirement_level: opt_in
+  - ref: network.interface.role
+    requirement_level: opt_in
+  - ref: network.interface.admin.state
+    requirement_level: opt_in
+  - ref: network.interface.oper.state
+    requirement_level: opt_in
+  - ref: network.interface.duplex
+    requirement_level: opt_in
+  - ref: network.interface.speed
+    requirement_level: opt_in
+  - ref: network.interface.mtu
+    requirement_level: opt_in
+  - ref: network.interface.ip.mtu
+    requirement_level: opt_in
+  - ref: network.interface.mac
+    requirement_level: opt_in
+  - ref: network.interface.index
+    requirement_level: opt_in
+  - ref: network.interface.parent.name
+    requirement_level: opt_in
+  - ref: network.interface.lower_layer.name
+    requirement_level: opt_in
+  - ref: network.interface.higher_layer.name
+    requirement_level: opt_in
+  - ref: network.interface.vlan.mode
+    requirement_level: opt_in
+  - ref: network.interface.vlan.native
+    requirement_level: opt_in
+  - ref: network.interface.vlan.tagged
+    requirement_level: opt_in
+  - ref: network.interface.vlan.outer
+    requirement_level: opt_in
+  - ref: network.interface.encapsulation.outer_vlan
+    requirement_level: opt_in
+  - ref: network.interface.encapsulation.inner_vlan
+    requirement_level: opt_in
+  - ref: network.access.session.type
+    requirement_level: opt_in
+  - ref: network.access.session.state
+    requirement_level: opt_in
+  - ref: network.access.session.id
+    requirement_level: opt_in
+  - ref: network.access.session.ac_name
+    requirement_level: opt_in
+  - ref: network.access.session.service_name
+    requirement_level: opt_in
+  - ref: network.access.session.mru
+    requirement_level: opt_in
+  - ref: network.sr.prefix_sid
+    requirement_level: opt_in
+  - ref: network.srv6.locator
+    requirement_level: opt_in
+  - ref: network.interface.poe.role
+    requirement_level: opt_in
+  - ref: network.interface.poe.standard
+    requirement_level: opt_in
+  - ref: network.interface.poe.class
+    requirement_level: opt_in
+  - ref: network.interface.poe.priority
+    requirement_level: opt_in
+  - ref: network.interface.poe.state
+    requirement_level: opt_in
+  entity_associations:
+  - network.interface

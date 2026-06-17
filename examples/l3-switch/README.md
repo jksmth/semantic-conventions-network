@@ -83,7 +83,7 @@ graph TD
         VL["network.vlan 10/20/30"]
         PO1["network.interface po1 (type=lag)<br/>+ network.lag · vlan.mode=trunk"]
         STP["network.stp.instance mstp<br/>is_root · port role/state"]
-        MAC["network.l2.mac.entries → network.vlan"]
+        MAC["network.l2.fdb.entry.count → network.vlan"]
     end
 
     SVI["network.interface vlan10 (type=vlan)<br/>the L2/L3 hinge — gateway"]
@@ -92,17 +92,17 @@ graph TD
 
     INST["network.instance default"]
 
-    ARPND["network.l3.adjacency.entries<br/>ARP (ipv4) / ND (ipv6) · state · → SVI"]
+    ARPND["network.l3.arpnd.entry.count<br/>ARP (ipv4) / ND (ipv6) · state · → SVI"]
 
     OSPF["network.neighbor protocol=ospf"]
     EIGRP["network.neighbor protocol=eigrp"]
-    RT["network.routing.routes<br/>protocol=ospf/eigrp/static/connected/aggregate"]
+    RT["network.routing.route.count<br/>protocol=ospf/eigrp/static/connected/aggregate"]
 
     HSRP["network.address.role=virtual<br/>network.redundancy.group type=hsrp"]
 
     PIM["network.neighbor protocol=pim"]
-    MR["network.multicast.routes (S,G)/(*,G)<br/>rpf_failures · rp.address"]
-    IGMP["network.multicast.groups (igmp/mld)<br/>querier role → SVI"]
+    MR["network.multicast.route.count (S,G)/(*,G)<br/>rpf_failures · rp.address"]
+    IGMP["network.multicast.group.count (igmp/mld)<br/>querier role → SVI"]
 
     HW["hw.*<br/>fans · PSU ×2 · inlet/ASIC temp"]
 
@@ -141,9 +141,9 @@ home for each:
 
 | Layer | Question it answers | `network.*` |
 |-------|---------------------|-------------|
-| MAC FDB (L2) | which **port** is this MAC on? | `network.l2.mac.entries` |
-| **ARP/ND (L2↔L3)** | which **MAC** is this next-hop IP? | `network.l3.adjacency.entries` |
-| RIB / neighbours (L3) | which **next-hop** for this prefix? | `network.routing.routes` / `network.neighbor` |
+| MAC FDB (L2) | which **port** is this MAC on? | `network.l2.fdb.entry.count` |
+| **ARP/ND (L2↔L3)** | which **MAC** is this next-hop IP? | `network.l3.arpnd.entry.count` |
+| RIB / neighbours (L3) | which **next-hop** for this prefix? | `network.routing.route.count` / `network.neighbor` |
 
 ---
 
@@ -157,7 +157,7 @@ VLANs *and* routes between them on the same box.
 `type` is the device's *dominant* forwarding class and a device performing multiple
 functions uses the dominant one. Set `type = switch` (the chassis is a switch that
 gained a routing personality), and let the **presence of the routing signals** —
-`network.neighbor` adjacencies, `network.routing.routes`, the SVIs — carry the rest.
+`network.neighbor` adjacencies, `network.routing.route.count`, the SVIs — carry the rest.
 The heavier weight is on `role = distribution` (positional, what it does in this
 design), which the enum carries without a fight.
 
@@ -183,10 +183,10 @@ Underneath the routing, this is a full L2 switch, and that half maps **exactly**
 |---------|-------------|-----|
 | Access VLANs 10/20/30 | `network.vlan` | [l2-switch §5](../l2-switch/README.md#5-vlans--the-mac-forwarding-database) |
 | Switchport mode / trunk / native / allowed-list | `network.interface.vlan.mode` / `.tagged` / `.native` | [l2-switch §4](../l2-switch/README.md#4-interfaces--switchport-membership) |
-| MAC forwarding database (per-VLAN occupancy) | `network.l2.mac.entries` → `network.vlan` | [l2-switch §5](../l2-switch/README.md#5-vlans--the-mac-forwarding-database) |
+| MAC forwarding database (per-VLAN occupancy) | `network.l2.fdb.entry.count` → `network.vlan` | [l2-switch §5](../l2-switch/README.md#5-vlans--the-mac-forwarding-database) |
 | MSTP root + per-port role/state | `network.stp.instance` (`is_root`, `instance.vlans`) + `network.stp.port.role`/`.state` | [l2-switch §6](../l2-switch/README.md#6-spanning-tree) |
 | LACP LAGs `po1`/`po2` to access stacks | `network.lag` + `type=lag` `network.interface` + `network.neighbor protocol=lacp` | [l2-switch §7](../l2-switch/README.md#7-the-lacp-uplink-bundle) |
-| MAC move / MAC-limit | `network.l2.mac.moved` (record) / `network.l2.mac_limit.exceeded` (alarm) | [l2-switch §10](../l2-switch/README.md#10-events-traps) |
+| MAC move / MAC-limit | `network.l2.mac.moved` (record) / `network.l2.fdb.limit_exceeded` (alarm) | [l2-switch §10](../l2-switch/README.md#10-events-traps) |
 
 The new content begins at the SVI, the object that exists *because* this box bridges
 and routes at once.
@@ -213,7 +213,7 @@ set is the SVIs and the routed uplink.
 | `network.interface.mac.address` *(the SVI MAC — often the HSRP virtual MAC; see [§8](#8-first-hop-redundancy--hsrpvrrp))* | `ifPhysAddress` | `.../ethernet/state/mac-address` |
 | `network.interface.role = uplink` *(the routed uplink)* | — (operator metadata) | derived |
 | `network.interface.io` / `packets` / `errors` / `discards` | `ifHC*` counters (IF-MIB) | `/interfaces/interface/state/counters` |
-| `network.interface.oper_state` (+ `admin_state`) | `ifOperStatus` / `ifAdminStatus` | `.../state/oper-status` |
+| `network.interface.oper.state` (+ `network.interface.admin.state`) | `ifOperStatus` / `ifAdminStatus` | `.../state/oper-status` |
 
 The SVI carries the standard interface counters like any other interface; what makes it
 the hinge is the three planes that anchor on it next — ARP/ND ([§6](#6-arp--nd--the-l3l2-resolution-table)),
@@ -233,10 +233,10 @@ package, the L3 twin of the L2 MAC FDB.
 
 | `network.*` | SNMP | OpenConfig |
 |-------------|------|------------|
-| `network.l3.adjacency.entries` *(occupancy of the ARP/ND table)* | `ipNetToPhysicalTable` (IP-MIB) | `/interfaces/interface/.../ipv4/neighbors` + `.../ipv6/neighbors` |
+| `network.l3.arpnd.entry.count` *(occupancy of the ARP/ND table)* | `ipNetToPhysicalTable` (IP-MIB) | `/interfaces/interface/.../ipv4/neighbors` + `.../ipv6/neighbors` |
 | `network.type = ipv4` *(ARP)* / `ipv6` *(ND)* — the table split | `ipNetToPhysicalType` AF | address family of the entry |
-| `network.l3.adjacency.entry.type` (`dynamic`/`static`/`control_plane`) | `ipNetToPhysicalType` | neighbor `origin` (`DYNAMIC`/`STATIC`) |
-| `network.l3.adjacency.state` (`reachable`/`stale`/`probe`/`incomplete`/`permanent`) | `ipNetToPhysicalState` | neighbor-state (RFC 4861 ND FSM) |
+| `network.l3.arpnd.entry.type` (`dynamic`/`static`/`control_plane`) | `ipNetToPhysicalType` | neighbor `origin` (`DYNAMIC`/`STATIC`) |
+| `network.l3.arpnd.state` (`reachable`/`stale`/`probe`/`incomplete`/`permanent`) | `ipNetToPhysicalState` | neighbor-state (RFC 4861 ND FSM) |
 | `network.l3.adjacency.native_state` *(verbatim, e.g. `REACHABLE`/`STALE`)* | (verbatim) | (verbatim) |
 
 The entries are a **count, not entities** — a busy distribution switch holds tens of
@@ -245,7 +245,7 @@ the spec refuses (the same discipline as the [MAC FDB](../l2-switch/README.md#5-
 The occupancy gauge associates with the `network.interface` (the per-SVI cache) and, for
 a per-VRF total, with `network.instance`.
 
-`network.l3.adjacency.state` is a **dedicated normalized enum, not folded into**
+`network.l3.arpnd.state` is a **dedicated normalized enum, not folded into**
 `network.neighbor.state`: `stale` and `probe` are healthy, intentional ND states that
 mapping to `up`/`down` would misreport, the same lesson as
 [OSPF `2-Way`](#72-the-state-table--normalized--native) and the
@@ -265,7 +265,7 @@ series, so "how many unresolved adjacencies?" is a first-class signal.
 The routing control plane maps **exactly** as the
 [core router's IS-IS/BGP did](../core-router/README.md#6-control-plane--is-is-bgp-bfd):
 each adjacency is a `network.neighbor`, route counts are
-[`network.routing.routes`](../core-router/README.md#9-routing-at-scale--rib--fib), and
+[`network.routing.route.count`](../core-router/README.md#9-routing-at-scale--rib--fib), and
 the adjacency transition is `network.neighbor.state.changed`. The interesting part on a
 campus box is that the same shape generalises to an IGP, to a proprietary protocol, and
 to routes with no peer at all.
@@ -326,9 +326,9 @@ this enum deliberately.
 
 | `network.*` metric | SNMP | OpenConfig |
 |--------------------|------|------------|
-| `network.routing.routes` (`network.routing.protocol`, `address_family`, `route.state`) | `inetCidrRouteTable` (IP-FORWARD-MIB) | `.../afts/...` + per-protocol RIB |
+| `network.routing.route.count` (`network.routing.protocol`, `address_family`, `route.state`) | `inetCidrRouteTable` (IP-FORWARD-MIB) | `.../afts/...` + per-protocol RIB |
 | `network.routing.updates` *(route churn)* | per-protocol update counters | `.../state/messages` |
-| `network.routing.ecmp.routes` (`ecmp.width`) | `inetCidrRouteTable` rows per prefix | `.../afts/.../next-hop-group` |
+| `network.routing.ecmp.route.count` (`ecmp.width`) | `inetCidrRouteTable` rows per prefix | `.../afts/.../next-hop-group` |
 
 A distribution switch's RIB is *dominated* by routes that came from no session —
 connected routes (one per SVI subnet), local host routes, static routes, and the
@@ -377,16 +377,16 @@ adjacencies on `network.neighbor`, and learns membership per `network.interface`
 | `network.*` | SNMP | OpenConfig |
 |-------------|------|------------|
 | `network.neighbor` `protocol=pim` *(PIM adjacency)* | `pimNeighborTable` (PIM-STD-MIB) | `.../pim/interfaces/interface/neighbors` |
-| `network.multicast.routes` (`route.type` ∈ `sg`/`star_g`, `address_family`) *(the mroute count)* | `ipMRouteTable` (IPMROUTE-STD-MIB) | `.../afts/.../multicast` |
+| `network.multicast.route.count` (`route.type` ∈ `sg`/`star_g`, `address_family`) *(the mroute count)* | `ipMRouteTable` (IPMROUTE-STD-MIB) | `.../afts/.../multicast` |
 | `network.multicast.rpf_failures` *(the signature multicast fault)* | mroute RPF-drop counters | mroute RPF drops |
-| `network.multicast.groups` (`membership.protocol` ∈ `igmp`/`mld`) → SVI | `igmpCacheTable` (IGMP-STD-MIB) | `.../igmp` / `.../mld` |
+| `network.multicast.group.count` (`membership.protocol` ∈ `igmp`/`mld`) → SVI | `igmpCacheTable` (IGMP-STD-MIB) | `.../igmp` / `.../mld` |
 | `network.multicast.querier` (`querier`/`non_querier`) — elected role gauge → SVI | `igmpInterfaceQuerier` | igmp querier state |
 | `network.multicast.pim.dr` *(boolean DR role on the interface)* | `pimInterfaceDR` | pim DR |
 | `network.multicast.rp.address` + `rp.type` (`anycast` here) | `pimRPTable` / vendor | pim rp |
 | group join/leave | `network.multicast.membership.changed` *(record: group + action + source)* | IGMPv3/MLDv2 report |
 
 The mroute is a **count + record**, exactly like the unicast RIB: `(S,G)`/`(*,G)`
-totals are a bounded series (`network.multicast.routes`), while per-`(S,G)` forwarding
+totals are a bounded series (`network.multicast.route.count`), while per-`(S,G)` forwarding
 flags and RPF interface are high-cardinality record detail, never metric dimensions.
 `rpf_failures` — a unicast-vs-multicast topology mismatch — is the primary multicast
 troubleshooting signal and has no unicast analogue. The **IGMP querier** is an *elected
@@ -431,14 +431,14 @@ The switch's defining traps refine the standard
 | linkUp / linkDown on SVIs / uplinks | `network.interface.state.changed` |
 | OSPF / EIGRP / PIM neighbour change | `network.neighbor.state.changed` *(native endpoints, e.g. `Full`→`Down`)* |
 | STP topology / root change, port forwarding↔blocking | `network.stp.topology.changed` / `network.stp.port.state.changed` ([l2-switch §10](../l2-switch/README.md#10-events-traps)) |
-| MAC move / MAC-limit | `network.l2.mac.moved` / `network.l2.mac_limit.exceeded` |
+| MAC move / MAC-limit | `network.l2.mac.moved` / `network.l2.fdb.limit_exceeded` |
 | HSRP/VRRP failover / coup / preempt | `network.redundancy.switchover` (`cause=redundancy_lost`) |
 | IGMP/MLD join / leave | `network.multicast.membership.changed` *(record)* |
 | fan / PSU / over-temp | `network.hardware.alarm` (keyed by `hw.id`) |
 | device / stack-member reboot | `network.device.state.changed` |
 
 The reconstructable transition **counters** (`network.neighbor.state_changes`,
-`network.routing.updates`, `network.l2.mac.entries`) survive a collector restart where a
+`network.routing.updates`, `network.l2.fdb.entry.count`) survive a collector restart where a
 stream of point-in-time events would not.
 
 ---
@@ -460,7 +460,7 @@ Deliberately out of scope, to keep the boundaries honest:
   `network.protocol.errors` ([§7.1](#71-ospf-and-eigrp-adjacencies)); what stays deferred
   is the per-*prefix* topology table — feasible/reported distance and the composite-metric
   K-values per route — which is per-prefix and so belongs on route records, not the
-  per-instance `network.routing.routes` count. (EIGRP is RFC 7868, so none of this is
+  per-instance `network.routing.route.count` count. (EIGRP is RFC 7868, so none of this is
   vendor-namespaced.)
 - **No modular `chassis` / `module`** — stacked/fixed-form, so the `network.device` is
   the inventory unit; the only sub-entity is the ASIC `network.component`, justified by

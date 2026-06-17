@@ -1,0 +1,92 @@
+# OTel-native equivalent of ../crosswalk/linux.yaml.
+#
+# The SAME source->network.* mapping as the Python engine's Linux path, but
+# expressed entirely as Collector config:
+#
+#   hostmetricsreceiver (collect)  ->  transformprocessor / OTTL (the crosswalk)
+#       ->  otlpexporter  ->  weaver registry live-check (OTLP listener)
+#
+# There is NO engine code here. ir.py, mapper.py, the bespoke sample JSON, and
+# report.py all collapse into this file + Weaver's built-in OTLP ingest and
+# non-zero-on-violation exit code. Compare this file line-for-line with
+# ../crosswalk/linux.yaml.
+
+receivers:
+  # hostmetrics' network scraper reads /proc/net/dev. The collector runs in
+  # r1's network namespace (see docker-compose.yml), so it sees r1's real
+  # interface counters — the same eth0/lo counters `ip -s link` reports.
+  hostmetrics:
+    collection_interval: 2s
+    scrapers:
+      network:
+        metrics:
+          # Emit only the two metrics we have a network.* home for, so the OTLP
+          # stream contains nothing the registry does not define. (The Python
+          # path achieves this by simply not mapping the others.)
+          system.network.io:
+            enabled: true
+          system.network.packets:
+            enabled: true
+          system.network.connections:
+            enabled: false
+          system.network.dropped:
+            enabled: false
+          system.network.errors:
+            enabled: false
+
+processors:
+  # Device identity + descriptors — the entity, carried on the Resource.
+  # Equivalent to the `device:` block in crosswalk/linux.yaml. DEVICE_ID is
+  # injected per-collector (one collector per device), mirroring devices.yaml.
+  resource:
+    attributes:
+      - key: network.device.id
+        value: ${env:DEVICE_ID}
+        action: upsert
+      - key: network.device.type
+        value: router
+        action: upsert
+      - key: os.name
+        value: Linux
+        action: upsert
+
+  # THE CROSSWALK, as OTTL. Compare with the `interface:` block in
+  # crosswalk/linux.yaml: same targets, reached from the hostmetrics field
+  # names via set()/delete_key() instead of the YAML field-spec grammar.
+  transform:
+    error_mode: ignore
+    metric_statements:
+      - context: metric
+        statements:
+          # system.network.io      -> network.interface.io      (unit By, matches)
+          - set(metric.name, "network.interface.io")      where metric.name == "system.network.io"
+          # system.network.packets -> network.interface.packets
+          - set(metric.name, "network.interface.packets") where metric.name == "system.network.packets"
+          # registry unit is {packet}; hostmetrics emits {packets} — normalize.
+          - set(metric.unit, "{packet}") where metric.name == "network.interface.packets"
+      - context: datapoint
+        statements:
+          # device (ifname) -> network.interface.name
+          - set(attributes["network.interface.name"], attributes["device"]) where attributes["device"] != nil
+          - delete_key(attributes, "device")
+          # direction values (receive/transmit) already match network.io.direction
+          - set(attributes["network.io.direction"], attributes["direction"]) where attributes["direction"] != nil
+          - delete_key(attributes, "direction")
+
+exporters:
+  otlp:
+    endpoint: ${env:WEAVER_ENDPOINT}
+    tls:
+      insecure: true
+    # weaver's live-check OTLP listener does not support compressed payloads.
+    compression: none
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    metrics:
+      receivers: [hostmetrics]
+      processors: [resource, transform]
+      exporters: [otlp]

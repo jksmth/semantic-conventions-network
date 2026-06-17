@@ -210,7 +210,7 @@ use.
 | What | `network.*` | Source |
 |------|-------------|--------|
 | The vNIC | `network.interface` `type=virtual` (on the VNF) | VNF NOS / `oc-interfaces` |
-| Up/down, MTU, MAC | `network.interface.oper_state` / `.mtu` / `.mac.address` | VNF NOS |
+| Up/down, MTU, MAC | `network.interface.oper.state` / `.mtu` / `.mac.address` | VNF NOS |
 | Counters | `network.interface.io` (By) / `.packets` / `.errors` / `.discards` | VNF NOS |
 | Which physical port it rides | the host's `hw.network.*` (NOT a VNF attribute) | host `hw.*` |
 

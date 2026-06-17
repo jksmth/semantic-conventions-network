@@ -1,0 +1,72 @@
+---
+file_format: definition/2
+entities:
+- type: network.lag
+  stability: development
+  brief: >
+    A link-aggregation group (LAG / IEEE 802.1AX) bundle on a device: the membership + health + LACP view of an aggregation, the bundle twin of the `type=lag` `network.interface` that carries its forwarding/counters.
+  note: |
+    The bundle half of the LAG/interface duality. A LAG is two views
+    of one aggregation:
+
+    - the `network.interface` of `type=lag` carries the FORWARDING / COUNTER
+      view (io/packets/errors/discards, admin/oper state, speed = sum of
+      members, MTU) — the existing interface metrics, unchanged;
+    - `network.lag` (this entity) carries the BUNDLE view — which members,
+      min-links, LACP mode/rate/system-id, and bundle health.
+
+    Related by id: `network.lag.id` corresponds in value to the `type=lag`
+    `network.interface.name`. Counters do NOT attach here (the `network.link`
+    discipline — health/topology on the bundle object, counters on the
+    interface).
+
+    Identity is scoped by the owning device: the full identity is
+    (`network.device.id`, `network.lag.id`); the owning `network.device` MUST
+    be present in the same Resource. See docs/entity-model.md (sub-entity identity).
+
+    LACP is split three ways, and this entity carries only the
+    AGGREGATE facet:
+    - adjacency HEALTH (up/down per partner) → a `network.neighbor`
+      `protocol=lacp`, one per member port (authored; the state table
+      has the LACP row);
+    - the AGGREGATE (mode/rate/system-id/min-links/state) → here;
+    - the partner SESSION bundle (per-member system-id/port/key/mux FSM) →
+      deferred to a future `network-session` package.
+
+    Members are a BOUNDED id-list (`network.lag.members`), not per-member
+    entities — a bundle holds at most the platform maximum.
+    See docs/conventions.md (cardinality firewall).
+
+    Multi-chassis (already authored): an ESI-LAG / MLAG bundle
+    REFERENCES `network.evpn.esi` and `network.redundancy.group.id`;
+    single-chassis LAGs omit them.
+
+    Deferred (NOT blockers for this entity): the LACP partner session bundle;
+    LAG events — member up/down, below-min-links, bundle down — with
+    the event-envelope package; per-member load-distribution / imbalance
+    metrics.
+
+    Maps to OpenConfig `aggregate` interfaces + `lacp/interfaces` and to
+    TR-181 `Device.Ethernet.Link` aggregation.
+  identity:
+  - ref: network.lag.id
+  description:
+  - ref: network.lag.members
+    requirement_level: recommended
+  - ref: network.lag.min_links
+    requirement_level: opt_in
+  - ref: network.lag.lacp.mode
+    requirement_level: recommended
+  - ref: network.lag.lacp.rate
+    requirement_level: opt_in
+  - ref: network.lag.lacp.system_id
+    requirement_level: opt_in
+  - ref: network.lag.state
+    requirement_level: recommended
+  - ref: network.lag.native_state
+    requirement_level: opt_in
+  # Multi-chassis references — present only for ESI-LAG / MLAG.
+  - ref: network.evpn.esi
+    requirement_level: opt_in
+  - ref: network.redundancy.group.id
+    requirement_level: opt_in

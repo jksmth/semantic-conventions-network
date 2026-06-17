@@ -1,0 +1,64 @@
+---
+file_format: definition/2
+
+# See registry.yaml banner. Placeholder stubs for the merged OTel
+# entity-events runtime events (spec #4836). The events are a settled upstream
+# direction, but upstream semconv does not yet ship an authorable model for
+# them — these stubs give network producers/consumers a named, reviewable
+# convention now. Replace when upstream ships an authorable model.
+
+events:
+- name: entity.state
+  stability: development
+  brief: >
+    Reports the current state of an entity: its identity, descriptive attributes, and its relationships to other entities. The runtime carrier for topology and entity lifecycle (spec #4836). Emitted on first observation, on change, and periodically (`report.interval`).
+  note: |
+    Mirrors the merged opentelemetry-specification entity-events data model.
+    The event payload is LogRecord-STRUCTURAL, not flat semantic-convention
+    attributes:
+
+      entity.type          string   - the entity type (e.g. "network.interface")
+      entity.id            map      - the identity key/value pairs (§3)
+      entity.description   map      - the descriptive key/value pairs
+      entity.relationships array    - [{ relationship.type, entity.type, entity.id }]
+                                      relationship.type taken from
+                                      network.relationship.type (registry.yaml)
+      report.interval      duration - the periodic re-report interval
+
+    The map/array shape is exactly why these are NOT authorable as flat
+    attributes in the current Weaver schema (this registry uses no `body:`
+    fields), and why upstream has not yet shipped an authorable model.
+    This stub names the
+    event and pins the network value-add: the `entity.type` values are our
+    entity types (§3); the relationship types are `network.relationship.type`.
+
+    NOT pinned with `entity_associations`: an `entity.state` event is
+    self-describing via its `entity.type` / `entity.id` payload — it is not a
+    network signal whose Resource is pinned to one entity.
+
+    The metric-side companion is the per-entity `*.info` projection metric
+    (e.g. `network.device.info` in model/network/device/metrics.yaml): this
+    event carries identity + descriptive + relationships for topology
+    consumers; the info metric carries the descriptive tier for metric backends.
+  attributes:
+  - ref: network.relationship.type
+    requirement_level: opt_in
+    note: >
+      Documents the linkage only: supplies the well-known value set for the `relationship.type` field inside each element of the `entity.relationships[]` payload array (the array itself is structural, not a flat attribute).
+
+- name: entity.delete
+  stability: development
+  brief: >
+    Reports that an entity no longer exists / is no longer observed — the tombstone half of the entity lifecycle (spec #4836).
+  note: |
+    See `entity.state`. Payload is structural:
+
+      entity.type   string - the entity type
+      entity.id     map    - the identity of the deleted entity
+
+    Replace when upstream ships an authorable entity-events model.
+  attributes:
+  - ref: network.relationship.type
+    requirement_level: opt_in
+    note: >
+      Present only to keep the placeholder group non-empty and linked to the network vocabulary; `entity.delete` carries no relationships in practice.

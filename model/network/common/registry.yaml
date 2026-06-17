@@ -1,0 +1,289 @@
+---
+file_format: definition/2
+
+# network-common — shared vocabulary referenced by the control-plane,
+# routing, and (future) session packages.
+#
+# Today this carries the cross-protocol address-family enum, the
+# normalized control-plane health-state enum + native-state companion
+# (the "normalized + native" pattern, README §State Modelling / Principle 10),
+# and the X.731 / RFC 8348 managed-entity administrative/operational state
+# enums shared by every hardware-entity grain (device / chassis / module /
+# component).
+# See docs/conventions.md (state modelling).
+#
+# Upstream attributes reused verbatim (not redefined here):
+#   - network.io.direction   (transmit | receive) on protocol message counters
+#   - error.type             classification on protocol error counters
+
+attributes:
+# --- Address family (AFI/SAFI; shared by neighbor + routing) -----------
+# This is the CONTROL-PLANE routing address family (combined AFI/SAFI),
+# NOT the data-plane IP version. It is deliberately distinct from upstream
+# `network.type` (ipv4|ipv6, the L3 protocol of observed traffic) — see
+# the note below. Every value is an explicit AFI/SAFI so it can never be
+# mistaken for the transport IP version.
+# See docs/conventions.md (naming rules).
+- key: network.address_family
+  type:
+    members:
+    - id: ipv4_unicast
+      value: "ipv4_unicast"
+      brief: IPv4 unicast (AFI 1 / SAFI 1).
+      stability: development
+    - id: ipv6_unicast
+      value: "ipv6_unicast"
+      brief: IPv6 unicast (AFI 2 / SAFI 1).
+      stability: development
+    - id: ipv4_multicast
+      value: "ipv4_multicast"
+      brief: IPv4 multicast (AFI 1 / SAFI 2).
+      stability: development
+    - id: ipv6_multicast
+      value: "ipv6_multicast"
+      brief: IPv6 multicast (AFI 2 / SAFI 2).
+      stability: development
+    - id: ipv4_labeled_unicast
+      value: "ipv4_labeled_unicast"
+      brief: IPv4 labeled-unicast / 6PE-style MPLS (AFI 1 / SAFI 4).
+      stability: development
+    - id: ipv6_labeled_unicast
+      value: "ipv6_labeled_unicast"
+      brief: IPv6 labeled-unicast (AFI 2 / SAFI 4).
+      stability: development
+    - id: vpnv4_unicast
+      value: "vpnv4_unicast"
+      brief: MPLS L3VPN IPv4 (AFI 1 / SAFI 128).
+      stability: development
+    - id: vpnv6_unicast
+      value: "vpnv6_unicast"
+      brief: MPLS L3VPN IPv6 (AFI 2 / SAFI 128).
+      stability: development
+    - id: l2vpn_evpn
+      value: "l2vpn_evpn"
+      brief: >
+        BGP EVPN (AFI 25 / SAFI 70). EVPN is a BGP address family, not a protocol value.
+      stability: development
+    - id: l2vpn_vpls
+      value: "l2vpn_vpls"
+      brief: BGP-signalled VPLS (AFI 25 / SAFI 65).
+      stability: development
+    - id: bgp_ls
+      value: "bgp_ls"
+      brief: BGP Link-State / BGP-LS (AFI 16388 / SAFI 71).
+      stability: development
+  stability: development
+  brief: >
+    The control-plane routing address family (combined IANA AFI/SAFI) a routing/control object operates on.
+  note: |
+    The AFI/SAFI a BGP session negotiates, or that a RIB count is
+    partitioned by — the control-plane "address-family ... " config
+    stanza, modelled as one combined value (matching OpenConfig
+    `AFI_SAFI_TYPE` and the IANA AFI + SAFI registries).
+
+    **Distinct from upstream `network.type`.** `network.type`
+    (Stable: `ipv4`|`ipv6`) is the *data-plane* L3 protocol of observed
+    traffic — the IP version of a packet/connection. This attribute is
+    the *control-plane* classification of routing information and is
+    orthogonal: a single BGP session over IPv6 transport
+    (`network.type=ipv6`) may carry `ipv4_unicast`, `vpnv4_unicast`, and
+    `l2vpn_evpn` families at once, and `network.type` has no values for
+    VPN/EVPN/VPLS/BGP-LS nor any way to distinguish unicast from
+    multicast from labeled-unicast within one IP version. The two are
+    never substituted for one another.
+
+    An open enum — values normalized to lowercase; custom values MAY be
+    used for families not listed (e.g. `ipv4_flowspec`, `ipv4_sr_te`,
+    `rt_constraint`). IGP topologies carry the IP family they enable
+    (OSPFv2/IS-IS-v4 → `ipv4_unicast`, OSPFv3/IS-IS-v6 → `ipv6_unicast`);
+    the OSI CLNS transport itself is not a routing address family here.
+
+    `evpn` is the `l2vpn_evpn` *family* of a BGP neighbour
+    (`network.neighbor.protocol=bgp`), never a protocol value; `vxlan`
+    is data-plane encapsulation, not an address family. Encapsulations
+    (`mpls`, `ethernet`) are NOT address families and are excluded.
+
+# --- Normalized control-plane health state -----------------------------
+# The coarse, cross-protocol enum. Every neighbour/session state machine
+# maps onto these five values; the verbatim protocol term is preserved
+# alongside in `network.neighbor.native_state`.
+- key: network.neighbor.state
+  type:
+    members:
+    - id: up
+      value: "up"
+      brief: >
+        The adjacency/session is fully established and healthy (e.g. BGP `Established`, OSPF `Full`/`2-Way`-as-intended, IS-IS `Up`, BFD `Up`, LACP `Collecting_Distributing`).
+      stability: development
+    - id: connecting
+      value: "connecting"
+      brief: >
+        The adjacency/session is in the process of forming and has not yet reached its healthy steady state (e.g. BGP `Connect`/`Active`/`OpenSent`/`OpenConfirm`, OSPF `Init`/`ExStart`/`Exchange`/`Loading`, IS-IS/BFD `Init`).
+      stability: development
+    - id: degraded
+      value: "degraded"
+      brief: >
+        The adjacency/session is established but impaired (e.g. a LAG up but below its configured min-links, or a session flapping within an observation window). Use only when the protocol exposes an explicit impaired-but-up condition.
+      stability: development
+    - id: down
+      value: "down"
+      brief: >
+        The adjacency/session is not established (e.g. BGP `Idle`, OSPF `Down`, IS-IS `Down`, BFD `Down`/`AdminDown`, an aged-out LLDP/PIM neighbour).
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: The state cannot be determined.
+      stability: development
+  stability: development
+  brief: >
+    The normalized, cross-protocol health state of a protocol adjacency/session.
+  note: |
+    The coarse value in the "normalized + native" pattern (README
+    §State Modelling, Principle 10). No single
+    enum can faithfully represent BGP, OSPF, IS-IS, BFD, LACP, and
+    LLDP state machines, so the verbatim protocol term is always
+    preserved in `network.neighbor.native_state`.
+
+    Used both as a `network.neighbor` descriptive attribute (state at
+    rest) and, when authored, as the enum-as-attribute dimension on a
+    current-state gauge (the K8s `status.phase` pattern).
+
+    Mapping table — `native_state` carries the exact term:
+
+    | Protocol | up | connecting | down |
+    |----------|----|-----------|------|
+    | BGP | Established | Connect, Active, OpenSent, OpenConfirm | Idle |
+    | OSPF/OSPFv3 | Full, 2-Way* | Attempt, Init, ExStart, Exchange, Loading | Down |
+    | IS-IS | Up | Init | Down |
+    | BFD | Up | Init | Down, AdminDown |
+    | LACP | Collecting_Distributing | Attached, Waiting, Collecting | Detached |
+    | LLDP | (neighbour present) | — | (TTL aged out) |
+    | PIM | (neighbour present) | — | (hold-time expired) |
+
+    *OSPF `2-Way` is a **healthy steady state** for non-DR/BDR neighbour
+    pairs on broadcast/NBMA segments and normalizes to `up`; an operator
+    detecting a pair *stuck* at `2-Way` that should reach `Full` uses
+    `native_state` to disambiguate. Elected/role states (OSPF DR/BDR,
+    IGMP querier/non-querier) are NOT health states — they are carried
+    by protocol-specific role attributes (deferred to the per-protocol
+    packages), never folded into this enum.
+
+- key: network.neighbor.native_state
+  type: string
+  stability: development
+  brief: >
+    The verbatim, protocol-/vendor-native state string, preserved alongside the normalized `network.neighbor.state`.
+  note: >
+    The exact term as reported by the device (e.g. "Established", "Full", "2-Way", "Collecting_Distributing"). Carries the fidelity the normalized enum deliberately discards.
+  examples: ["Established", "Full", "2-Way", "Init", "Collecting_Distributing"]
+
+# --- Managed hardware-entity administrative / operational state ---------
+# The X.731 / ENTITY-STATE-MIB (RFC 4268) / RFC 8348 (ietf-hardware) entity
+# state axes, shared by every HARDWARE-ENTITY grain — device, chassis, module,
+# component. These four are all RFC 8348 `/hardware/component` objects and
+# genuinely share ONE vocabulary (entStateAdmin / entStateOper), so the
+# attribute is defined ONCE here and ref'd on each.
+#
+# NOT the interface plane. An interface uses RFC 2863 ifAdminStatus /
+# ifOperStatus — a DIFFERENT vocabulary (up/down, plus dormant /
+# lower_layer_down / not_present) — and carries its own
+# `network.interface.admin.state` / `network.interface.oper.state`
+# (model/network/interface). The two planes are kept separate on purpose: no
+# consumer aggregates admin/oper state across interfaces AND chassis/modules in
+# one query, and merging the two vocabularies into one superset enum put
+# synonyms (`up` ≡ `enabled`) on the same axis, which double-buckets the
+# `sum by (state)` the status metric depends on.
+#
+# THREE ORTHOGONAL AXES — do not conflate (the X.731 split):
+#   - network.admin.state  — operator INTENT. "Did someone administratively
+#     take this out of service?" (locked/unlocked/shutting_down). No hw.* equiv.
+#   - network.oper.state    — operational CAPABILITY. "Can it carry traffic
+#     right now?" (enabled/disabled/testing). No hw.* equivalent.
+#   - hw.state (upstream)    — HEALTH (ok/degraded/failed/…). "Is the hardware
+#     healthy?" This is the X.731 alarm-state axis, NOT admin or oper. A device
+#     can be hw.state=ok AND admin.state=locked AND oper.state=disabled
+#     (healthy hardware an operator shut down). `degraded` is a HEALTH value
+#     and lives on hw.state — it is deliberately NOT an admin or oper value.
+#
+# Each enum is the X.731 vocabulary with ONE value per concept (no synonyms),
+# so `sum by (network.oper.state)` counts cleanly. Open enums: callers MAY
+# supply additional values, and the verbatim vendor term is preserved alongside
+# in `network.native_state`.
+#
+# Prior art: ITU-T X.731 (state management); RFC 4268 ENTITY-STATE-MIB
+# (entStateAdmin / entStateOper); RFC 8348 ietf-hardware `state/admin-state`,
+# `state/oper-state`; OpenConfig `oc-platform` component oper-status.
+- key: network.admin.state
+  type:
+    members:
+    - id: unlocked
+      value: "unlocked"
+      brief: >
+        The entity is administratively in service / available for use (ENTITY-STATE-MIB / X.731 `unlocked`).
+      stability: development
+    - id: locked
+      value: "locked"
+      brief: >
+        The entity is administratively prohibited from use — an operator took it out of service (ENTITY-STATE-MIB / X.731 `locked`).
+      stability: development
+    - id: shutting_down
+      value: "shutting_down"
+      brief: >
+        The entity is administratively transitioning out of service — existing usage is allowed to drain but no new usage is permitted (ENTITY-STATE-MIB / X.731 `shuttingDown`).
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: The administrative state cannot be determined.
+      stability: development
+  stability: development
+  brief: >
+    The administrative state of a managed hardware entity — the operator's intent (in or out of service), independent of its health or operational capability.
+  note: >
+    The X.731 / RFC 8348 `admin-state` (ENTITY-STATE-MIB `entStateAdmin`) axis. Operator INTENT, NOT health: `locked` means an operator administratively took the entity out of service, regardless of whether the hardware is healthy (`hw.state`) or operational (`network.oper.state`). Shared across the hardware-entity grains `network.device`, `network.chassis`, `network.module`, `network.component`. An interface uses the separate `network.interface.admin.state` (RFC 2863 ifAdminStatus, `up`/`down`). An OPEN enum: callers MAY supply additional values without a registry-validation failure, and the verbatim vendor term is preserved in `network.native_state`.
+  examples: ["unlocked", "locked", "shutting_down"]
+
+- key: network.oper.state
+  type:
+    members:
+    - id: enabled
+      value: "enabled"
+      brief: >
+        The entity is partially or fully operable (ENTITY-STATE-MIB `enabled`).
+      stability: development
+    - id: disabled
+      value: "disabled"
+      brief: >
+        The entity is totally inoperable (ENTITY-STATE-MIB `disabled`).
+      stability: development
+    - id: testing
+      value: "testing"
+      brief: >
+        The entity is under test and cannot report whether it is operational (ENTITY-STATE-MIB `testing`).
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: The operational state cannot be determined.
+      stability: development
+  stability: development
+  brief: >
+    The operational state of a managed hardware entity — whether it is currently able to perform its function, independent of operator intent or hardware health.
+  note: >
+    The X.731 / RFC 8348 `oper-state` (ENTITY-STATE-MIB `entStateOper`) axis. Operational CAPABILITY, NOT health: an entity may be `disabled` because an operator locked it (`network.admin.state=locked`) or because of a fault — comparing the two axes (and `hw.state`) separates "operator shut it" from "it failed". Shared across the hardware-entity grains `network.device`, `network.chassis`, `network.module`, `network.component`. An interface uses the separate `network.interface.oper.state` (RFC 2863 ifOperStatus, which adds `dormant` / `lower_layer_down` / `not_present`). An OPEN enum: callers MAY supply additional values without a registry-validation failure, and the verbatim vendor term is preserved in `network.native_state`. `degraded` is a HEALTH value and belongs on `hw.state`, not here.
+  examples: ["enabled", "disabled", "testing"]
+
+# --- Native (verbatim) entity/interface state companion ----------------
+# The "normalized + native" pattern (README §State Modelling, Principle 10)
+# applied to BOTH state planes: the coarse normalized value lives in the
+# hardware-entity `network.admin.state` / `network.oper.state` or the interface
+# `network.interface.admin.state` / `network.interface.oper.state`, and the
+# exact vendor-/standard-native term is preserved verbatim here. Shared by both
+# planes (a verbatim string is plane-agnostic). Defined exactly as
+# `network.neighbor.native_state` (a verbatim, untransformed vendor string).
+- key: network.native_state
+  type: string
+  stability: development
+  brief: >
+    The verbatim, untransformed vendor-/standard-native state string, preserved alongside the normalized admin/oper state (`network.admin.state` / `network.oper.state` on hardware entities, `network.interface.admin.state` / `network.interface.oper.state` on interfaces).
+  note: >
+    The exact term as reported by the device (e.g. "shuttingDown", "lowerLayerDown", "notPresent", "testing"). Carries the fidelity the normalized open-enum axes deliberately discard, mirroring `network.neighbor.native_state` for the control-plane adjacency state.
+  examples: ["shuttingDown", "lowerLayerDown", "notPresent", "dormant"]

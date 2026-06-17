@@ -1,0 +1,133 @@
+---
+file_format: definition/2
+
+# network-nat events. Two alarm refinements (the silent-outage twins of the
+# address-pool family) and two observation RECORDS (the CG-NAT binding log).
+#
+#   - network.nat.pool_exhausted        — a NAT pool ran out of addresses/ports;
+#     refines `network.alarm` (cause=table_exhausted), the exact sibling of
+#     `network.access.pool_exhausted`.
+#   - network.nat.port_block_exhausted  — ONE subscriber's port-block filled,
+#     while the pool still has free ports; refines `network.alarm`
+#     (cause=table_exhausted). The per-subscriber silent outage the aggregate
+#     pool gauge cannot see.
+#   - network.nat.port_block.allocated / .released — the CG-NAT binding RECORDS
+#     (RFC 6888 §2.3/§12 logging): "subscriber X held public ip:port-range R
+#     from T1 to T2." A third-category observation record (NOT a state-change
+#     or alarm), the twin of the per-subscriber usage record — never a
+#     per-translation firehose. RFC 7422 deterministic allocation
+#     (`network.nat.pool.type=deterministic`) reduces or eliminates these.
+
+event_refinements:
+- id: network.nat.pool_exhausted
+  ref: network.alarm
+  stability: development
+  brief: >
+    A NAT pool reached capacity — new translations can no longer be allocated, a silent outage for new connections while existing ones (and CPU) look fine. The raised/cleared alarm complementing `network.nat.port.utilization` (the usual trigger under PAT) and `network.nat.pool.utilization`.
+  note: |
+    `network.alarm.cause=table_exhausted` (optionally
+    `category=processing_error`) — the same finite-resource shape as
+    `network.access.pool_exhausted` and `network.session.table_exhausted`.
+    Under PAT this almost always means PORTS exhausted, not addresses.
+    Associates `network.nat.pool` (the exhausted pool, by
+    `network.nat.pool.id`). `severity=cleared` when capacity frees up.
+  entity_associations:
+  - network.nat.pool
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: Always `table_exhausted` for this refinement.
+  - ref: network.alarm.category
+    requirement_level: opt_in
+    note: Normally `processing_error` (a resource-limit fault).
+  - ref: network.alarm.specific_problem
+    requirement_level: opt_in
+
+- id: network.nat.port_block_exhausted
+  ref: network.alarm
+  stability: development
+  brief: >
+    A SINGLE subscriber's CG-NAT port-block filled — that subscriber cannot open new connections even though the pool has free ports. A per-subscriber silent outage invisible to `network.nat.port.utilization` and `network.nat.port_block.count`.
+  note: |
+    `network.alarm.cause=table_exhausted`. The per-subscriber counterpart to
+    `network.nat.pool_exhausted`: the pool is healthy, but this subscriber's
+    block is full (the resolution is a larger block or an extra block).
+    Associates `network.nat.pool`; carries `network.access.subscriber.id`
+    (opt-in — PII / high cardinality) to name the affected subscriber.
+    `severity=cleared` when the subscriber's block frees up or is extended.
+  entity_associations:
+  - network.nat.pool
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: Always `table_exhausted` for this refinement.
+  - ref: network.access.subscriber.id
+    requirement_level: opt_in
+    note: Opt-in — PII / high cardinality; see the attribute definition.
+  - ref: network.alarm.category
+    requirement_level: opt_in
+    note: Normally `processing_error` (a resource-limit fault).
+
+events:
+# The CG-NAT binding log — observation RECORDS, not state/alarm events. A
+# port-block allocation/release pair brackets the interval during which a
+# subscriber held a public ip:port-range, the carrier-mandated
+# "who-was-NAT'd-to-what" log (RFC 6888 §2.3/§12). Logging the BLOCK (not every
+# translation) is the industry answer to the per-translation firehose
+# (RFC 7422); the record is the third category (the usage-record twin), never a
+# metric. PII: the subscriber/inside identity is opt-in.
+- name: network.nat.port_block.allocated
+  stability: development
+  brief: >
+    A block of public L4 ports on a shared address was allocated to one subscriber — the opening half of the CG-NAT binding log.
+  note: |
+    A third-category observation RECORD (event.name), NOT a state-change or
+    alarm — nothing about a durable entity's state transitioned; it is a
+    point-in-time binding observation. The carrier logging object RFC 6888
+    requires for abuse/lawful-intercept ("who held `203.0.113.7:40012` at
+    14:07"): carries the shared public address, the port-block range, and
+    (opt-in) the subscriber it was allocated to. The matching
+    `network.nat.port_block.released` closes the interval.
+
+    Bulk/deterministic allocation (`network.nat.pool.type=deterministic`,
+    RFC 7422) makes the mapping computable, so the binding can be emitted once
+    at config time (or derived) rather than per allocation. Ingestion: an IPFIX
+    NAT event (RFC 8158), a syslog CGN line, or a YANG-push `nat-event` all map
+    onto this one record with their native form preserved. The post-NAT tuple
+    aligns with ECS `source.nat.ip` (= `network.nat.port_block.address`) so this
+    record joins to flow records.
+  attributes:
+  - ref: network.nat.port_block.address
+    requirement_level: required
+  - ref: network.nat.port_block.start
+    requirement_level: required
+  - ref: network.nat.port_block.end
+    requirement_level: required
+  - ref: network.access.subscriber.id
+    requirement_level: opt_in
+    note: Opt-in — PII / high cardinality; the inside identity the block was allocated to.
+  - ref: network.event.message
+    requirement_level: opt_in
+  entity_associations:
+  - network.nat.pool
+
+- name: network.nat.port_block.released
+  stability: development
+  brief: >
+    A previously-allocated CG-NAT port-block was released — the closing half of the CG-NAT binding log, ending the interval the subscriber held the public ip:port-range.
+  note: >
+    The deallocation RECORD matching `network.nat.port_block.allocated` (same fields). The allocated/released pair brackets the interval an abuse/lawful-intercept query resolves against. A third-category observation record, not a state-change or alarm.
+  attributes:
+  - ref: network.nat.port_block.address
+    requirement_level: required
+  - ref: network.nat.port_block.start
+    requirement_level: required
+  - ref: network.nat.port_block.end
+    requirement_level: required
+  - ref: network.access.subscriber.id
+    requirement_level: opt_in
+    note: Opt-in — PII / high cardinality; the inside identity the block was allocated to.
+  - ref: network.event.message
+    requirement_level: opt_in
+  entity_associations:
+  - network.nat.pool

@@ -1,0 +1,205 @@
+---
+file_format: definition/2
+
+# network-test events — two observation RECORDS and two alarm refinements.
+#
+#   - network.test.executed   — the per-run RECORD: one test run completed, with
+#     its run-detail (duration, successes/failures, throughput run params) and
+#     error.type on failure. The twin of the flow record for the active side.
+#   - network.test.path.hop   — the per-HOP RECORD of a traceroute/path result:
+#     ordered by network.test.path.hop.index within a
+#     network.test.path.id. This is the RECORD carrier; the EQUAL span carrier
+#     (one trace per run, a span per hop) carries the IDENTICAL attribute set
+#     (registry.yaml header).
+#   - network.test.unreachable — full reachability loss to the target; refines
+#     network.alarm (cause=connectivity_lost). The concrete alertable form of
+#     the availability hole.
+#   - network.test.degraded    — partial loss / SLA-objective breach; refines
+#     network.alarm (cause=threshold_crossed, category=quality_of_service),
+#     carrying the SLA objective + observed value (the SLA-violation shape).
+#
+# Reuse, don't mint: source.* (agent) / destination.* (target) /
+# network.transport / network.type / network.protocol.name / error.type are
+# referenced from upstream + the source/destination registries, never
+# redefined. These are MEASUREMENT/RESULT records — they carry no flow
+# conversation fields (byte/packet deltas, transport flags), keeping
+# network.flow.* cleanly separable.
+
+events:
+# --- The per-run result record ---
+- name: network.test.executed
+  stability: development
+  brief: >
+    A single active test run completed — the per-run observation record carrying the run's outcome and parameters.
+  note: |
+    A third-category observation RECORD (event.name), not a state-change or
+    alarm. Correlates a run's metric observations (`network.test.latency` etc.)
+    with its execution context and outcome, and is where a failed run is
+    reported: on success `error.type` is absent (the OTel pattern); on
+    failure it carries the reason (timeout / connection_refused / no_response).
+    Carries the agent as `source.*` and the resolved target as
+    `destination.*`; the configured test is `network.test.id`, the vantage is
+    the Resource-level `network.observer.id`. `severity_number` SHOULD be INFO on
+    success, WARN on failure.
+  attributes:
+  - ref: network.test.id
+    requirement_level: required
+  - ref: network.test.type
+    requirement_level: required
+  - ref: network.test.protocol
+    requirement_level: recommended
+  - ref: source.address
+    requirement_level: opt_in
+    note: The agent's own address (it is the source of the probe traffic).
+  - ref: destination.address
+    requirement_level: recommended
+    note: The resolved target address this run measured against.
+  - ref: network.transport
+    requirement_level:
+      conditionally_required: When the test exercises a specific transport (e.g. throughput over tcp/udp).
+  - ref: network.protocol.name
+    requirement_level:
+      conditionally_required: When the test runs over an application-layer protocol (e.g. http).
+  - ref: network.type
+    requirement_level: recommended
+  - ref: error.type
+    requirement_level:
+      conditionally_required: When the run failed. Absent on success.
+    note: The failure reason; absent on success (e.g. timeout, connection_refused, no_response).
+  - ref: network.test.duration
+    requirement_level: recommended
+  - ref: network.test.samples.sent
+    requirement_level: opt_in
+  - ref: network.test.samples.received
+    requirement_level: opt_in
+  - ref: network.test.bytes
+    requirement_level: opt_in
+  - ref: network.test.warmup.bytes
+    requirement_level: opt_in
+  - ref: network.test.warmup.duration
+    requirement_level: opt_in
+  - ref: network.test.threads
+    requirement_level: opt_in
+  - ref: network.test.tcp.retransmissions
+    requirement_level: opt_in
+  - ref: network.event.message
+    requirement_level: opt_in
+  entity_associations:
+  - network.test
+
+# --- The per-hop path record (carrier-dual with a span tree) ---
+- name: network.test.path.hop
+  stability: development
+  brief: >
+    One hop of a traceroute / path-discovery result — the per-hop observation, ordered within a path run. The RECORD carrier of the carrier-dual path result (the equal span carrier uses the identical attribute set).
+  note: |
+    A third-category observation RECORD (event.name). The ordered per-hop
+    result a traceroute produces: correlate all hops of one run by
+    `network.test.path.id` and order by `network.test.path.hop.index` (the
+    membership-by-reference idiom — `network.path` / `network.link`):
+    this record and a SPAN tree (one trace per run, a span per hop, Span Kind
+    carrying observer role) are EQUAL carriers of the SAME attribute set; the
+    record is the cardinality-safe floor, the span tree is the path-map /
+    waterfall view active-test/flow tooling renders. The per-hop subject
+    (the hop IP / reverse-DNS name / AS / prefix) is a router the agent is NOT —
+    carried here as the reused `destination.*` observed-endpoint fields
+    (a hop is an intermediate destination), never as a metric dimension or an
+    entity.
+
+    "Where did latency/loss enter the path" — the question a traceroute exists
+    to answer — is the step-up in `network.test.path.hop.latency` /
+    `.loss.ratio` between consecutive hops.
+  attributes:
+  - ref: network.test.id
+    requirement_level: recommended
+  - ref: network.test.path.id
+    requirement_level: required
+  - ref: network.test.path.hop.index
+    requirement_level: required
+  - ref: network.test.path.hop.latency
+    requirement_level: recommended
+  - ref: network.test.path.hop.loss.ratio
+    requirement_level: opt_in
+  - ref: destination.address
+    requirement_level: recommended
+    note: The hop's IP address (the reused observed-endpoint attribute; a hop is an intermediate destination).
+  - ref: destination.hostname
+    requirement_level: opt_in
+    note: The hop's reverse-DNS name.
+  - ref: destination.as.number
+    requirement_level: opt_in
+    note: The AS that owns the hop (semconv #3740).
+  - ref: destination.as.name
+    requirement_level: opt_in
+  - ref: destination.address.prefix
+    requirement_level: opt_in
+    note: The hop's CIDR aggregate (cardinality-reduction handle).
+  - ref: network.event.message
+    requirement_level: opt_in
+  entity_associations:
+  - network.test
+
+event_refinements:
+# --- Reachability loss (the availability alarm; made alertable) ---
+- id: network.test.unreachable
+  ref: network.alarm
+  stability: development
+  brief: >
+    An active test can no longer reach its target — full connectivity loss measured from outside the subject. The alertable form of the availability/SLO signal.
+  note: |
+    `network.alarm.cause=connectivity_lost` (the target/path is unreachable
+    at the network layer). The active-observer counterpart to a device's own
+    down events: because it is measured from a vantage the subject is not, it
+    is the one signal that says "the service is unreachable FROM HERE". Pairs
+    with `network.test.availability` (the gauge) and `network.test.sla.state`
+    (the verdict). `severity=cleared` when reachability is restored.
+    Associates `network.test`; the vantage is the Resource `network.observer.id`.
+  entity_associations:
+  - network.test
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: "`connectivity_lost` (target/path unreachable). `service_unreachable` MAY be used when a required service endpoint, not the network path, is the subject."
+  - ref: destination.address
+    requirement_level: recommended
+    note: The target that became unreachable.
+  - ref: network.alarm.specific_problem
+    requirement_level: opt_in
+  - ref: network.event.message
+    requirement_level: opt_in
+
+# --- SLA-objective breach / partial degradation (the SD-WAN SLA shape) ---
+- id: network.test.degraded
+  ref: network.alarm
+  stability: development
+  brief: >
+    An active test breached its SLA objective or detected partial loss/degradation while still reachable — the assurance-platform SLA-violation alarm.
+  note: |
+    `network.alarm.cause=threshold_crossed`, `category=quality_of_service`:
+    a measured value (loss / latency / jitter) crossed the test's
+    `network.test.sla.objective` while the target is still reachable — the
+    transition of `network.test.sla.state` to `violating`. Carries the
+    breached threshold and the observed value in the alarm's
+    `threshold.value`/`observed.value` slots (in the measure's own unit).
+    `severity=cleared` when the test returns to conformance. The same
+    SLA-violation object the SD-WAN edge needed. Associates
+    `network.test`.
+  entity_associations:
+  - network.test
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+    note: Always `threshold_crossed` for this refinement.
+  - ref: network.alarm.category
+    requirement_level: recommended
+    note: Normally `quality_of_service`.
+  - ref: network.test.sla.objective
+    requirement_level: recommended
+  - ref: network.alarm.threshold.value
+    requirement_level: opt_in
+  - ref: network.alarm.observed.value
+    requirement_level: opt_in
+  - ref: network.alarm.specific_problem
+    requirement_level: opt_in
+  - ref: network.event.message
+    requirement_level: opt_in

@@ -1,0 +1,59 @@
+---
+file_format: definition/2
+entities:
+- type: network.test
+  stability: development
+  brief: >
+    A configured synthetic / active measurement test: a latency-loss-jitter probe, a traceroute/path test, a BGP-reachability check, a voice/RTP-quality test, or the network layer of an HTTP/DNS test. Run from one or many vantage points (agents) against a target.
+  note: |
+    The active-measurement domain's central entity (the assurance
+    platform is organised around tests-and-their-SLAs, not raw samples).
+    The agent that RUNS the test is NOT this entity — it is a
+    `network.observer` (`type=agent`); a result carries both the
+    `network.observer.id` (which vantage) and this `network.test.id`
+    (which test).
+
+    Identity (a test spans vantages, like `network.link`/`network.path`
+    spans devices): full identity is `network.test.id` ALONE — it is NOT
+    scoped by a device or observer. The same test is run from many agents;
+    each emits results tagged with its own `network.observer.id` plus this
+    id. The agent↔test assignment ("which agents run test T") is the
+    membership-by-reference convention (a query over the id), never N
+    per-agent test entities. See docs/entity-model.md (sub-entity identity)
+    and docs/conventions.md (cardinality firewall).
+
+    It passes the entity test: bounded by config (a platform has thousands
+    of tests, not the millions of results they produce), durable, with
+    telemetry over time. The per-run RESULTS are records/spans/metrics that
+    associate with it, not more entities.
+
+    The SLA facet (`network.test.sla.state` + `.objective`) is the same
+    SLA-class object the SD-WAN edge needed — authored here
+    because this is where the long-wanted availability/SLO capability
+    becomes an alertable verdict: reachability/loss to a target
+    measured from OUTSIDE the subject IS availability, and only an
+    Axis-2 active observer can produce it.
+
+    Scope (net/app): the test owns the L3/L4 + path + transport-voice layer;
+    a `type=http`/`dns` test's APPLICATION result reuses the upstream
+    HTTP / DNS / synthetic-RUM conventions, joined by `network.test.id`.
+
+    The TARGET (`network.test.target` / the resolved `destination.*`) and
+    the per-hop PATH are subjects the agent is NOT — they are descriptive
+    attributes / record fields, not entities (pending the OTel
+    entities SIG observed-subject association).
+  identity:
+  - ref: network.test.id
+  description:
+  - ref: network.test.type
+    requirement_level: recommended
+  - ref: network.test.target
+    requirement_level: recommended
+  - ref: network.test.protocol
+    requirement_level: opt_in
+  - ref: network.test.interval
+    requirement_level: opt_in
+  - ref: network.test.sla.state
+    requirement_level: recommended
+  - ref: network.test.sla.objective
+    requirement_level: opt_in

@@ -1,0 +1,7 @@
+# Operator-assigned metadata that is NOT derivable from the device itself.
+# network.device.id is taken from the device's configured hostname (the
+# managed-router source in the source-precedence table); role is an operator
+# design choice, so it lives here.
+devices:
+  r1: {role: pe}
+  r2: {role: pe}

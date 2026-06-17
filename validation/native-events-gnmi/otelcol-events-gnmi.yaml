@@ -1,0 +1,70 @@
+# Events Lane B (push): gNMI on-change -> gnmic file -> filelogreceiver -> OTTL ->
+# network.state.changed event -> OTLP -> weaver.
+#
+# Each gnmic line is one JSON object:
+#   {"name":"if-oper","tags":{"interface_name":"ethernet-1/1",...},
+#    "values":{"/srl_nokia-interfaces:interface/oper-state":"down"}}
+# The OTTL turns that into the model's state-change event — the SAME event the
+# syslog lane (../native-events) produces, but from a sub-second gNMI push.
+
+receivers:
+  filelog:
+    include: [/shared/events.jsonl]
+    start_at: beginning
+    operators:
+      - type: json_parser
+        parse_to: attributes
+
+processors:
+  resource:
+    attributes:
+      - key: network.device.id
+        value: srl1
+        action: upsert
+      - key: network.device.type
+        value: router
+        action: upsert
+
+  transform/event:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - set(log.attributes["oper"], log.attributes["values"]["/srl_nokia-interfaces:interface/oper-state"])
+          - set(log.event_name, "network.state.changed") where log.attributes["oper"] != nil
+          - set(log.attributes["network.event.state.current"], log.attributes["oper"]) where log.attributes["oper"] != nil
+          - set(log.attributes["network.event.state.previous"], "up")   where log.attributes["oper"] == "down"
+          - set(log.attributes["network.event.state.previous"], "down") where log.attributes["oper"] == "up"
+          - set(log.attributes["network.event.state.dimension"], "operational") where log.attributes["oper"] != nil
+          - set(log.attributes["network.interface.name"], log.attributes["tags"]["interface_name"]) where log.attributes["tags"] != nil
+          # strip the raw gnmic fields so only registry names remain
+          - delete_key(log.attributes, "oper")
+          - delete_key(log.attributes, "values")
+          - delete_key(log.attributes, "tags")
+          - delete_key(log.attributes, "name")
+          - delete_key(log.attributes, "timestamp")
+          - delete_key(log.attributes, "log.file.name")
+
+  # keep only records that became events (drop anything without our event name)
+  filter/only_events:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'log.event_name != "network.state.changed"'
+
+exporters:
+  otlp:
+    endpoint: ${env:WEAVER_ENDPOINT}
+    tls:
+      insecure: true
+    compression: none
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    logs:
+      receivers: [filelog]
+      processors: [transform/event, filter/only_events, resource]
+      exporters: [otlp]

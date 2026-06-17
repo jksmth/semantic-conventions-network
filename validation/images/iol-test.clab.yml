@@ -1,0 +1,13 @@
+# Smoke test: does the built IOL image boot under emulation on this host?
+name: ioltest
+topology:
+  nodes:
+    r1:
+      kind: cisco_iol
+      image: vrnetlab/cisco_iol:17.18.02
+    sw1:
+      kind: cisco_iol
+      type: l2
+      image: vrnetlab/cisco_iol:L2-17.18.02
+  links:
+    - endpoints: ["r1:Ethernet0/1", "sw1:Ethernet0/1"]

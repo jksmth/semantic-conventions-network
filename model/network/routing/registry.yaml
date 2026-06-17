@@ -1,0 +1,185 @@
+---
+file_format: definition/2
+
+# network-routing — RIB/route-count telemetry.
+#
+# `network.routing.protocol` is the second of the two context-scoped
+# protocol keys: the protocol that *installed a route*, as opposed to
+# `network.neighbor.protocol` (the protocol forming an adjacency).
+# See docs/conventions.md (naming rules). Its value space also covers
+# non-session route *sources* (static/connected/local/aggregate) without
+# a separate route.source attribute.
+#
+# Routes are modelled as a COUNT, never as per-route entities: a full
+# Internet table is ~1M routes. The same firewall applies to ECMP: routes
+# are bucketed by a bounded fan-out (`network.routing.ecmp.width`, hardware-
+# capped at 64/128/256), never emitted as a per-prefix series.
+
+attributes:
+- key: network.routing.protocol
+  type:
+    members:
+    - id: bgp
+      value: "bgp"
+      brief: Route learned via BGP.
+      stability: development
+    - id: ospf
+      value: "ospf"
+      brief: Route learned via OSPFv2.
+      stability: development
+    - id: ospfv3
+      value: "ospfv3"
+      brief: Route learned via OSPFv3.
+      stability: development
+    - id: isis
+      value: "isis"
+      brief: Route learned via IS-IS.
+      stability: development
+    - id: eigrp
+      value: "eigrp"
+      brief: >
+        Route learned via EIGRP. Broadly-deployed proprietary protocols take a normalized well-known value.
+      stability: development
+    - id: rip
+      value: "rip"
+      brief: Route learned via RIP.
+      stability: development
+    - id: static
+      value: "static"
+      brief: >
+        Statically configured route (a route source, not a protocol).
+      stability: development
+    - id: connected
+      value: "connected"
+      brief: >
+        Directly-connected route from an interface subnet (OpenConfig `DIRECTLY_CONNECTED`).
+      stability: development
+    - id: local
+      value: "local"
+      brief: >
+        Local route for the device's own interface address.
+      stability: development
+    - id: aggregate
+      value: "aggregate"
+      brief: >
+        Device-synthesised summary/aggregate route.
+      stability: development
+  stability: development
+  brief: >
+    The protocol or source that installed a route into the RIB.
+  note: |
+    The second context-scoped protocol key, distinct from
+    `network.neighbor.protocol` (adjacency-forming) and from the
+    upstream L7 `network.protocol.name`. The value space folds in
+    non-session route sources (`static`, `connected`, `local`,
+    `aggregate`) so the routes that dominate a typical RIB have clean
+    provenance and the neighbour-centric model does not leak.
+
+    Open enum, values normalized to lowercase; custom values MAY be
+    used. Administrative distance / preference is a separate concern,
+    not encoded here.
+
+- key: network.routing.route.state
+  type:
+    members:
+    - id: total
+      value: "total"
+      brief: All routes in the RIB for the protocol/AF.
+      stability: development
+    - id: active
+      value: "active"
+      brief: >
+        Best/active routes selected for forwarding (installed in the FIB).
+      stability: development
+    - id: received
+      value: "received"
+      brief: >
+        Routes received from peers before best-path/policy selection (e.g. BGP Adj-RIB-In).
+      stability: development
+    - id: advertised
+      value: "advertised"
+      brief: >
+        Routes advertised to peers (e.g. BGP Adj-RIB-Out).
+      stability: development
+    - id: fib
+      value: "fib"
+      brief: >
+        Routes actually programmed into the hardware FIB. `active` is the RIB-best selection; `fib` is what made it into forwarding silicon — `active` > `fib` surfaces a programming failure / TCAM exhaustion (the RIB-vs-FIB gap).
+      stability: development
+  stability: development
+  brief: >
+    Which stage/selection of the RIB a route count refers to.
+  note: >
+    Distinguishes total vs active(best) vs received vs advertised vs fib(programmed) counts on `network.routing.route.count`, so churn between received and active (best-path activity) and the RIB-vs-FIB programming gap are both visible.
+
+# --- ECMP / multipath fan-out ------------------------------------------
+# The path-count dimension behind `network.routing.ecmp.route.count`. Both
+# forwarding models converge on the same primitive — a route resolves to a
+# SET of next-hops — they just expose it differently: OpenConfig AFT names
+# the deduplicated `next-hop-group` (with a per-next-hop weight for
+# unequal-cost), while the legacy IP-FORWARD-MIB (RFC 4292) `inetCidrRouteTable`
+# shows one row per (dest, prefix, next-hop). Counting routes by width is
+# derivable from both; the next-hop-group TABLE-fill is
+# `network.component.utilization` (resource `ecmp`/`next_hop_group`).
+
+- key: network.routing.ecmp.width
+  type: int
+  stability: development
+  brief: >
+    The number of equal-cost next-hops a route resolves to in the FIB — its ECMP/multipath fan-out. `1` means a single path (no ECMP — an unprotected prefix).
+  note: |
+    The count of active next-hops in the route's forwarding next-hop-group
+    (OpenConfig AFT `next-hop-groups/next-hop-group/next-hops`), equivalently
+    the number of `inetCidrRouteTable` rows sharing one (destination, prefix)
+    in the IP-FORWARD-MIB multipath model. Bounded and small — hardware ECMP
+    fan-out caps at 64/128/256 — so it is a legal bucketing dimension on
+    `network.routing.ecmp.route.count`; it is NEVER used to key a per-prefix series.
+
+    Unequal-cost (weighted) ECMP is expressed by the per-next-hop `weight` in
+    the forwarding model; that per-member detail is relationship territory and
+    is not carried on this aggregate width.
+  examples: [1, 2, 4, 64]
+
+# --- Routing dynamics --------------------------------------------------
+# On a full-table PE the route COUNT is nearly constant and a poor health
+# signal; CHURN and CONVERGENCE are what operators alert on. These two
+# dimensions drive the `network.routing.updates` and
+# `network.routing.convergence.duration` metrics.
+
+- key: network.routing.update.type
+  type:
+    members:
+    - id: advertisement
+      value: "advertisement"
+      brief: A route advertised / added (a BGP UPDATE announcement, an IGP add).
+      stability: development
+    - id: withdrawal
+      value: "withdrawal"
+      brief: A route withdrawn / removed.
+      stability: development
+  stability: development
+  brief: >
+    Whether a routing update added or removed reachability — the churn split.
+  note: >
+    The dimension on `network.routing.updates`. Counts ROUTE CHANGES, the operator's instability signal — distinct from `network.protocol.messages` (which counts protocol PDUs). Open enum, lowercase.
+
+- key: network.routing.convergence.phase
+  type:
+    members:
+    - id: spf
+      value: "spf"
+      brief: IGP shortest-path-first computation (IS-IS / OSPF SPF run).
+      stability: development
+    - id: bestpath
+      value: "bestpath"
+      brief: BGP best-path selection / table walk.
+      stability: development
+    - id: fib_download
+      value: "fib_download"
+      brief: RIB-to-FIB download / hardware programming time.
+      stability: development
+  stability: development
+  brief: >
+    Which phase of reconvergence a duration measurement refers to.
+  note: >
+    The dimension on `network.routing.convergence.duration`. "How long did we reconverge after a topology change" — the backbone SLA question. Open enum, lowercase.

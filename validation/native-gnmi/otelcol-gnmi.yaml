@@ -1,0 +1,69 @@
+# gNMI source: receive gnmic's OTLP, map gNMI/OpenConfig paths -> network.*,
+# re-export to weaver. This is the THIRD transport (after netlink and SNMP) hitting
+# the same registry targets — the crosswalk-stays-clean thesis on OpenConfig paths.
+#
+# gnmic emits, e.g.:
+#   metric:  gnmic__srl_nokia_interfaces:interface_statistics_in_octets   (Gauge)
+#   attrs:   interface_name=ethernet-1/1, subscription-name=if-octets
+#   resource: source=172.22.22.11:57400
+# OTTL below turns that into network.interface.io {network.io.direction} on a
+# network.interface resource.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  resource:
+    attributes:
+      - key: network.device.id
+        value: srl1
+        action: upsert
+      - key: network.device.type
+        value: router
+        action: upsert
+      - key: network.device.vendor.name
+        value: nokia
+        action: upsert
+      - key: os.name
+        value: SR Linux
+        action: upsert
+      - key: source # gnmic's target-address tag — not a registry attribute
+        action: delete
+
+  transform:
+    error_mode: ignore
+    metric_statements:
+      # 1) data-point attributes first (metric name is still the raw gNMI path here)
+      - context: datapoint
+        statements:
+          - set(attributes["network.io.direction"], "receive")  where IsMatch(metric.name, ".*in_octets")
+          - set(attributes["network.io.direction"], "transmit") where IsMatch(metric.name, ".*out_octets")
+          - set(attributes["network.interface.name"], attributes["interface_name"]) where attributes["interface_name"] != nil
+          - delete_key(attributes, "interface_name")
+          - delete_key(attributes, "subscription-name")
+      # 2) then the metric: counter shape + unit + the registry name
+      - context: metric
+        statements:
+          - set(unit, "By") where IsMatch(name, ".*octets")
+          - convert_gauge_to_sum("cumulative", true) where IsMatch(name, ".*octets")
+          - set(name, "network.interface.io") where IsMatch(name, ".*octets")
+
+exporters:
+  otlp:
+    endpoint: ${env:WEAVER_ENDPOINT}
+    tls:
+      insecure: true
+    compression: none
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [resource, transform]
+      exporters: [otlp]

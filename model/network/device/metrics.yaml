@@ -1,0 +1,224 @@
+---
+file_format: definition/2
+metrics:
+- name: network.device.cpu.utilization
+  stability: development
+  brief: >
+    CPU utilization of the network device's control/management plane.
+  note: |
+    Reported as a ratio (0.0–1.0). On modular devices with multiple
+    control-plane CPUs, use `network.component.id` to distinguish them.
+
+    When the device is also a host, this metric covers only
+    the element-specific control-plane CPU. Generic host CPU is reported
+    via `system.cpu.utilization`.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.component.id
+    requirement_level: opt_in
+    brief: >
+      Identifies which CPU/processor on a modular device, when more than one exists.
+  entity_associations:
+  - network.device
+
+- name: network.device.memory.utilization
+  stability: development
+  brief: >
+    Memory utilization of the network device's control/management plane.
+  note: |
+    Reported as a ratio (0.0–1.0); a ratio is required because
+    `memory.usage` in bytes alone cannot express it.
+
+    On modular devices with multiple memory pools, use
+    `network.component.id` to distinguish them.
+
+    The ratio is the alerting signal ("RAM > 85%"); the byte gauges
+    `network.device.memory.usage`/`.limit` are the capacity-planning pair.
+    A producer SHOULD emit the ratio; it MAY also emit the bytes.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.component.id
+    requirement_level: opt_in
+    brief: >
+      Identifies which memory pool on a modular device, when more than one exists.
+  entity_associations:
+  - network.device
+
+- name: network.device.memory.usage
+  stability: development
+  brief: >
+    Memory currently in use by the network device's control/management plane, in bytes.
+  note: |
+    The capacity half of the memory picture: byte-level
+    consumption for capacity planning and trend/leak detection, alongside
+    the `network.device.memory.utilization` ratio (the alerting signal).
+    `usage / limit = utilization`.
+
+    Aligns with upstream `system.memory.usage` (By). On modular devices with
+    multiple memory pools, use `network.component.id` to distinguish them.
+  instrument: gauge
+  unit: "By"
+  attributes:
+  - ref: network.component.id
+    requirement_level: opt_in
+    brief: >
+      Identifies which memory pool on a modular device, when more than one exists.
+  entity_associations:
+  - network.device
+
+- name: network.device.memory.limit
+  stability: development
+  brief: >
+    Total memory available to the network device's control/management plane, in bytes.
+  note: |
+    The denominator for `network.device.memory.usage` — total
+    installed/usable control-plane RAM, the capacity headroom signal.
+    Aligns with upstream `system.memory.limit` (By). Use
+    `network.component.id` to distinguish pools on modular devices.
+  instrument: gauge
+  unit: "By"
+  attributes:
+  - ref: network.component.id
+    requirement_level: opt_in
+    brief: >
+      Identifies which memory pool on a modular device, when more than one exists.
+  entity_associations:
+  - network.device
+
+- name: network.device.uptime
+  stability: development
+  brief: >
+    Time since the device last restarted, in seconds.
+  note: >
+    The most basic device health signal. Resets to zero on restart.
+  instrument: gauge
+  unit: "s"
+  entity_associations:
+  - network.device
+
+- name: network.component.utilization
+  stability: development
+  brief: >
+    Utilization of a forwarding resource on a network component.
+  note: |
+    Reported as a ratio (0.0–1.0). The `network.component.resource`
+    dimension identifies which table/resource is being measured.
+
+    This is the metric for data-plane table fill:
+    MAC table, TCAM, ACL, FIB, LFIB, ARP/ND, next-hop
+    groups. These are the resources that exhaust before CPU/RAM on
+    most network devices and are the #1 outage mode on firewalls
+    and switches.
+
+    Only attaches to `network.component` — and only
+    exists because `hw.*` has no concept of forwarding-table fill.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.component.resource
+    requirement_level: required
+  entity_associations:
+  - network.component
+
+# --- Managed-entity admin/oper state (X.731 / RFC 8348) ----------------
+# The current-state half of the state-modelling pattern (docs/conventions.md):
+# a value-always-1 UpDownCounter carrying the state as an enum attribute (the
+# K8s status.phase / system.network.interface.status idiom), so a `sum` counts
+# entities per state. The transition is the shared `network.state.changed`
+# event; the verbatim vendor term rides `network.*.native_state` where a
+# producer needs it. These associate with EVERY hardware-entity grain — the
+# RFC 8348 `state` container attaches to any `/hardware/component`.
+#
+# admin (operator intent) and oper (operational capability) are kept as two
+# metrics — they are orthogonal axes (a locked entity may still be enabled
+# mid-shutdown, an unlocked one disabled by a fault), and `sum` per state only
+# makes sense within one axis. hw.state (health) is a THIRD axis on hw.status.
+
+- name: network.admin.status
+  stability: development
+  brief: >
+    The administrative state of a managed hardware entity (device / chassis / module / component) — value always 1, the state carried in `network.admin.state`.
+  note: >
+    The X.731 / RFC 8348 `admin-state` as a status metric: one series per `network.admin.state` value, value 1 for the entity's current administrative state (the K8s `status.phase` pattern, as `system.network.interface.status`). Operator INTENT, not health — `locked` is an operator-disabled entity regardless of `hw.state`. Pairs with the `network.state.changed` event (`network.event.state.dimension=administrative`).
+  instrument: updowncounter
+  unit: "1"
+  attributes:
+  - ref: network.admin.state
+    requirement_level: required
+  entity_associations:
+  - network.device
+  - network.chassis
+  - network.module
+  - network.component
+
+- name: network.oper.status
+  stability: development
+  brief: >
+    The operational state of a managed hardware entity (device / chassis / module / component) — value always 1, the state carried in `network.oper.state`.
+  note: >
+    The X.731 / RFC 8348 `oper-state` as a status metric: one series per `network.oper.state` value, value 1 for the entity's current operational state. Operational CAPABILITY, not health: comparing `disabled` here against `network.admin.state` (`locked`?) and `hw.state` (`failed`?) separates an operator shutdown from a fault. Pairs with the `network.state.changed` event (`network.event.state.dimension=operational`).
+  instrument: updowncounter
+  unit: "1"
+  attributes:
+  - ref: network.oper.state
+    requirement_level: required
+  entity_associations:
+  - network.device
+  - network.chassis
+  - network.module
+  - network.component
+
+# --- Entity info metric (the Prometheus `target_info` / kube-state `*_info`
+# join pattern) ----------------------------------------------------------
+# The metric-pipeline projection of the `network.device` entity: a gauge fixed
+# at 1 whose labels MIRROR THE ENTITY DESCRIPTION SET 1:1, the metric twin of
+# the `entity.state` event (model/events) — same attribute set, one carried in
+# the metric signal, the other in the log/event signal. The IDENTITY
+# (`network.device.id`) is REQUIRED and present ON the metric — it is the join
+# key (`op_series * on(network.device.id) group_left(...) network.device.info`),
+# so it cannot merely ride the Resource. Every DESCRIPTOR attribute of the
+# entity is an opt_in label here (including the state enums admin/oper — those
+# also have their own `network.admin.status`/`network.oper.status` metrics; the
+# dual is deliberate, kube-state-style). Only MEASUREMENTS are excluded
+# (counters, continuous-value gauges, timestamps). Forward-compat: the planned
+# automatic entity -> info projection is expected to project the full
+# description set, so mirroring it here keeps this hand-authored metric aligned.
+- name: network.device.info
+  stability: development
+  brief: >
+    Info metric for `network.device` (value always 1). Mirrors the device entity's full description set as labels so consumers can JOIN them onto operational series on `network.device.id` (the Prometheus `target_info` / kube-state-metrics `*_info` pattern).
+  note: >
+    `network.device.id` is REQUIRED and carried on the metric: it is the join key, not merely a Resource attribute. The remaining labels mirror the `network.device` entity's description set 1:1 (the metric twin of the `entity.state` event), including the state enums (`network.admin.state`/`network.oper.state`) — these deliberately appear BOTH here and as their own `network.admin.status`/`network.oper.status` metrics (the kube-state dual). Only measurements are excluded.
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.device.id
+    requirement_level: required
+  - ref: network.device.name
+    requirement_level: opt_in
+  - ref: network.device.type
+    requirement_level: opt_in
+  - ref: network.device.role
+    requirement_level: opt_in
+  - ref: network.device.vendor.name
+    requirement_level: opt_in
+  - ref: network.device.vendor.id
+    requirement_level: opt_in
+  - ref: network.device.label
+    requirement_level: opt_in
+  - ref: hw.model
+    requirement_level: opt_in
+  - ref: hw.serial_number
+    requirement_level: opt_in
+  - ref: os.name
+    requirement_level: opt_in
+  - ref: os.version
+    requirement_level: opt_in
+  - ref: network.admin.state
+    requirement_level: opt_in
+  - ref: network.oper.state
+    requirement_level: opt_in
+  entity_associations:
+  - network.device

@@ -1,0 +1,40 @@
+# gnmic: subscribe to SR Linux interface counters over gNMI and export them as
+# OpenTelemetry (OTLP) metrics. This is the gNMI source for the third transport.
+targets:
+  172.22.22.11:57400:
+    username: admin
+    password: NokiaSrl1!
+
+skip-verify: true
+encoding: json_ietf
+
+subscriptions:
+  if-octets:
+    paths:
+      - /interface[name=*]/statistics/in-octets
+      - /interface[name=*]/statistics/out-octets
+    stream-mode: sample
+    sample-interval: 5s
+
+processors:
+  # SR Linux returns Counter64 as a JSON string; cast the octet values to int so
+  # gnmic exports them as numeric metrics (not dropped string values).
+  octets-to-int:
+    event-convert:
+      value-names:
+        - "octets"
+      type: int
+
+outputs:
+  to-otel:
+    type: otlp
+    endpoint: gnmi-otelcol:4317
+    metric-prefix: gnmic
+    # octets are cumulative counters -> monotonic Sum (matches network.interface.io)
+    counter-patterns:
+      - "octets|packets|bytes"
+    # device-level tag onto the Resource; interface tags stay on data points
+    resource-tag-keys:
+      - source
+    event-processors:
+      - octets-to-int

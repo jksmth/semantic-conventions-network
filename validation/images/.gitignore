@@ -1,0 +1,6 @@
+# vendor images and build artifacts are sourced/built locally, never committed
+refplat-*/
+*.iso
+vrnetlab/
+*.bin
+*.tar.gz

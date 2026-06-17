@@ -1,0 +1,576 @@
+---
+file_format: definition/2
+attributes:
+# --- Identity -----------------------------------------------------------
+# Interface identity is the Stable upstream `network.interface.name` (IF-MIB
+# ifName), referenced from upstream (entities.yaml `identity:`) — NOT redefined
+# here. It preserves its `stable` stability and string value type. This is the
+# persistent, configuration-level name of the interface (e.g. `ge-0/0/0`,
+# `Ethernet1/1`, `eth0`). The human-readable description/alias is
+# `network.interface.description`; the unstable ifIndex disambiguator is
+# `network.interface.index` below.
+
+- key: network.interface.index
+  type: int
+  stability: development
+  brief: >
+    The IF-MIB `ifIndex` of the interface — an opt-in disambiguator, not the identity.
+  note: |
+    The SNMP `ifIndex` (IF-MIB) of the interface: a per-device integer
+    that indexes the ifTable. Provided as an `opt_in` disambiguator for
+    correlating with SNMP-sourced telemetry; it is NOT the identity key
+    (identity is `network.interface.name`) because ifIndex is unstable
+    across reboots without ifIndex-persistence.
+
+    Named `index` — NOT `if_index` — per the package's no-`if_`-prefix
+    convention.
+  examples: [2, 17, 1001]
+
+- key: network.interface.description
+  type: string
+  stability: development
+  brief: >
+    A human-readable, operator-assigned description/alias for the interface (SNMP ifAlias).
+  note: >
+    Distinct from the interface *name*: the name is the identity (the Stable upstream `network.interface.name` attribute). This is the free-text alias an operator configures (SNMP ifAlias). Mutable — may change on reconfiguration. Not used for identity. Named `description` to avoid colliding with the upstream `network.interface.name` attribute, which means the interface name. The hardware-level interface description (SNMP ifDescr) is not modelled here — it is covered by `hw.*`.
+  examples: ["Uplink to core-rtr-1", "Customer A - 1G", "MGMT"]
+
+# --- Classification -----------------------------------------------------
+- key: network.interface.type
+  type: string
+  stability: development
+  brief: >
+    The type of the interface.
+  note: |
+    An open string typed loosely against the IANA ifType registry
+    (a curated subset of common values). Custom values MAY be used.
+
+    Well-known values:
+    `ethernet`, `loopback`, `lag` (port-channel/bond), `vlan` (SVI/IRB),
+    `bridge`, `tunnel`, `virtual`, `wireless`, `cellular`,
+    `subinterface`, `management`, `pon` (a passive-optical-network port —
+    OLT PON port or ONU UNI; the specific PON standard is carried by
+    `network.pon.type`, e.g. `gpon`/`xgspon`).
+  examples: ["ethernet", "lag", "vlan", "tunnel", "loopback", "wireless", "pon"]
+
+- key: network.interface.role
+  type: string
+  stability: development
+  brief: >
+    The operator-assigned topological role of the interface.
+  note: |
+    Describes the interface's purpose in the network design. This is
+    orthogonal to `network.interface.vlan.mode` and to
+    `network.interface.type`.
+
+    Well-known values:
+    `uplink`, `downlink`, `peer`, `customer`, `fabric`, `access`,
+    `management`, `loopback`, `transit`.
+  examples: ["uplink", "customer", "fabric", "access", "management"]
+
+# --- State --------------------------------------------------------------
+# Administrative/operational state for an INTERFACE uses the RFC 2863 IF-MIB
+# (RFC 8343 ietf-interfaces) vocabulary — `up`/`down` (+ the diagnostic
+# ifOperStatus values `dormant`/`lower_layer_down`/`not_present`) — which is a
+# DIFFERENT value space from the X.731 hardware-entity vocabulary
+# (locked/unlocked/shutting_down + enabled/disabled). The two planes are kept
+# as separate attributes on purpose (no consumer aggregates admin/oper state
+# across interfaces AND chassis/modules in one query, and folding both into one
+# enum put synonyms `up` ≡ `enabled` on the same axis, breaking the status
+# metric's `sum by (state)`). The hardware-entity pair lives in
+# model/network/common/registry.yaml (`network.admin.state`/`network.oper.state`);
+# these interface-specific keys are the IF-MIB plane. The verbatim vendor term
+# rides on the shared `network.native_state` either way.
+#
+# admin = operator INTENT ("did someone shut it?"), oper = operational
+# CAPABILITY ("can it pass traffic?"); both are distinct from `hw.state`
+# (HEALTH). The timestamp of the most recent oper-state transition (IF-MIB
+# `ifLastChange`) is NOT an attribute — it is a timestamp measurement modelled
+# as the `network.interface.last_change` gauge (metrics.yaml), per the
+# descriptor-vs-measurement rule (docs/conventions.md — Entity info metrics).
+- key: network.interface.admin.state
+  type:
+    members:
+    - id: up
+      value: "up"
+      brief: >
+        The interface is administratively enabled / ready to pass packets (RFC 2863 ifAdminStatus `up`).
+      stability: development
+    - id: down
+      value: "down"
+      brief: >
+        The interface is administratively disabled / shut by an operator (RFC 2863 ifAdminStatus `down`).
+      stability: development
+    - id: testing
+      value: "testing"
+      brief: >
+        The interface is administratively placed in a test mode and no operational packets can pass (RFC 2863 ifAdminStatus `testing`).
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: The administrative state cannot be determined.
+      stability: development
+  stability: development
+  brief: >
+    The administrative state of an interface — the operator's intent (in or out of service), independent of its operational capability or hardware health.
+  note: >
+    The RFC 2863 IF-MIB `ifAdminStatus` (RFC 8343 ietf-interfaces `admin-status`) axis. Operator INTENT, NOT health: `down` means an operator shut the interface, regardless of whether it could otherwise pass traffic (`network.interface.oper.state`) or the hardware beneath it is healthy (`hw.state`). The interface plane of the admin axis — distinct from the X.731 hardware-entity `network.admin.state` (locked/unlocked/shutting_down) used by `network.device` / `network.chassis` / `network.module` / `network.component`. An OPEN enum: callers MAY supply additional values, and the verbatim vendor term is preserved in `network.native_state`.
+  examples: ["up", "down", "testing"]
+
+- key: network.interface.oper.state
+  type:
+    members:
+    - id: up
+      value: "up"
+      brief: >
+        The interface is up and ready to pass packets (RFC 2863 ifOperStatus `up`).
+      stability: development
+    - id: down
+      value: "down"
+      brief: >
+        The interface is down and not ready to pass packets (RFC 2863 ifOperStatus `down`).
+      stability: development
+    - id: testing
+      value: "testing"
+      brief: >
+        The interface is in a test mode and cannot report whether it is operational (RFC 2863 ifOperStatus `testing`).
+      stability: development
+    - id: dormant
+      value: "dormant"
+      brief: >
+        The interface is operationally up but waiting for an external event before it can pass traffic (e.g. a dial-up line awaiting a call) (RFC 2863 ifOperStatus `dormant`).
+      stability: development
+    - id: lower_layer_down
+      value: "lower_layer_down"
+      brief: >
+        The interface is down because a lower-layer interface it runs on is down (RFC 2863 ifOperStatus `lowerLayerDown`).
+      stability: development
+    - id: not_present
+      value: "not_present"
+      brief: >
+        A required component (e.g. a missing transceiver or sub-module) is not installed (RFC 2863 ifOperStatus `notPresent`).
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: The operational state cannot be determined.
+      stability: development
+  stability: development
+  brief: >
+    The operational state of an interface — whether it can currently pass traffic, independent of operator intent or hardware health.
+  note: >
+    The RFC 2863 IF-MIB `ifOperStatus` (RFC 8343 ietf-interfaces `oper-status`) axis. Operational CAPABILITY, NOT health: comparing `down` here against `network.interface.admin.state` (operator-shut?) and the lower-layer state separates an operator shutdown from a fault or a lower-layer outage. The diagnostic values `dormant` / `lower_layer_down` / `not_present` are preserved as first-class values rather than collapsed to a coarse `down`. The interface plane of the oper axis — distinct from the X.731 hardware-entity `network.oper.state` (enabled/disabled/testing). An OPEN enum: callers MAY supply additional values, and the verbatim vendor term is preserved in `network.native_state`.
+  examples: ["up", "down", "dormant", "lower_layer_down"]
+
+# --- Physical properties ------------------------------------------------
+- key: network.interface.speed
+  type: int
+  stability: development
+  brief: >
+    The configured or maximum negotiated link speed of the interface, in bits per second.
+  note: |
+    The entity attribute represents the *intended* or *configured* speed.
+    The `network.interface.speed` gauge metric represents the *current
+    operational* speed, which may be lower due to autoneg, degraded optics,
+    or LAG member loss.
+
+    When both are reported, comparing them surfaces speed-mismatch faults
+    (configured 10G but operating at 1G due to bad SFP/cable).
+
+    Always `bit/s`, never `By/s`.
+  examples: [1000000000, 10000000000, 100000000000]
+
+- key: network.interface.duplex
+  type:
+    members:
+    - id: full
+      value: "full"
+      brief: Full duplex.
+      stability: development
+    - id: half
+      value: "half"
+      brief: Half duplex.
+      stability: development
+    - id: auto
+      value: "auto"
+      brief: Auto-negotiation (result not yet determined or not reported).
+      stability: development
+  stability: development
+  brief: >
+    The duplex mode of the interface.
+  note: >
+    Relevant on copper Ethernet interfaces. Irrelevant (and typically omitted) on fiber, coherent optical, wireless, and logical interfaces. Half/full mismatch is a classic L1/L2 fault.
+
+- key: network.interface.mtu
+  type: int
+  stability: development
+  brief: >
+    The Layer 2 frame MTU configured on the interface, in bytes (OpenConfig `config/mtu` sense).
+  note: |
+    A `network.*`-only attribute: `hw.network.*` has no MTU
+    concept and MTU is a logical/configuration property that applies to
+    logical interfaces (SVI, LAG, sub-interface, tunnel) with no
+    hardware FRU.
+
+    This is the **L2 frame MTU** — the largest Layer 2 frame the
+    interface forwards (OpenConfig `config/mtu` sense), an integer number
+    of bytes in the range 64 to 65535 inclusive. The L3/IP MTU is carried
+    separately and per-address-family by `network.interface.ip.mtu`, which
+    differs from this value by the encapsulation overhead (VLAN tags,
+    MPLS, tunnel headers). A single L2 frame MTU is reported here
+    alongside one `network.interface.ip.mtu` per address family. Jumbo-
+    frame and L2-vs-L3 MTU-mismatch faults are diagnosed by comparing the
+    two.
+  examples: [1500, 9000, 9216]
+
+- key: network.interface.ip.mtu
+  type: int
+  stability: development
+  brief: >
+    The Layer 3 (IP) MTU of the interface for a given address family, in bytes.
+  note: |
+    The **L3 per-address-family MTU** — the largest IP packet the
+    interface forwards for one address family — an integer number of
+    bytes in the range 64 to 65535 inclusive. Distinct from the L2 frame
+    MTU (`network.interface.mtu`), from which it differs by the
+    encapsulation overhead (VLAN tags, MPLS, tunnel headers).
+
+    Dimensioned by `network.type`, whose values here are constrained to
+    the closed set `ipv4` and `ipv6`. A dual-stack interface reports this
+    attribute **once per `network.type` value** (`ipv4` and `ipv6`), with
+    independent values, alongside a single `network.interface.mtu`. This
+    represents the common case of differing IPv4 and IPv6 MTUs on one
+    interface.
+  examples: [1500, 1480, 9000]
+
+- key: network.interface.mac
+  type: string
+  stability: development
+  brief: >
+    The operational Layer 2 (MAC) address of the interface, in IEEE RA hexadecimal form.
+  note: |
+    The *operational* L2 address of the interface, distinct from the
+    upstream `hw.network.physical_address` and defined alongside it
+    (NOT a redefinition):
+
+    - `hw.network.physical_address` is the physical adapter's
+      burned-in address — the hardware-FRU fact, keyed by `hw.id`.
+    - `network.interface.mac` is the operational address of the
+      interface, which (a) also exists on logical interfaces that have
+      no hardware FRU (SVI/IRB, LAG, sub-interface, tunnel, bridge) and
+      (b) frequently differs from the burned-in address (NOS-assigned
+      chassis MAC, VRRP/HSRP virtual MAC, locally-administered override,
+      MAC spoofing).
+
+    On a physical port both MAY be present and are related via `hw.id`
+    ↔ `network.interface`; consumers read whichever fact they need.
+
+    Named `mac` (not `mac.address`) to match the upstream `host.mac` /
+    `hw.network.physical_address` / `network.interface.mac` spelling.
+    Represent in IEEE RA hexadecimal form — hyphen-separated octets,
+    uppercase, most- to least-significant — exactly as `host.mac` mandates,
+    regardless of the device's native rendering.
+  examples: ["00-1B-21-3C-4D-5E", "02-42-AC-11-00-02"]
+
+# --- Relationships (layering) -------------------------------------------
+# Two complementary attributes for interface relationships:
+#
+# parent.name — simple containment (1:1). A subinterface belongs to its
+#   parent physical/logical port. This is the structural "configured on"
+#   relationship. Mirrors OpenConfig's interface/subinterface containment
+#   and SNMP ifStackTable's higher-layer direction for the simple case.
+#   Always single-valued.
+#
+# lower_layer.name[] — protocol stacking (1:N). The interface(s) this one
+#   runs on top of. Handles the LAG fan-out case (a LAG's lower layers are
+#   its member ports) and multi-layer stacking (IP over VLAN over LAG over
+#   physical). Mirrors RFC 2863 ifStackTable / OpenConfig lower-layer-if
+#   and TR-181 InterfaceStack/LowerLayers. Can be multi-valued.
+#
+# They overlap: for a subinterface, parent.name and lower_layer.name[0] are
+# typically the same value. Both are kept because:
+#   - parent.name is trivial to query/index for the common containment case
+#   - lower_layer.name[] handles the fan-out/stacking cases parent.name cannot
+#   - OpenConfig models both: structural containment AND lower-layer-if
+#
+- key: network.interface.parent.name
+  type: string
+  stability: development
+  brief: >
+    The `network.interface.name` of the parent interface this interface is contained within (e.g. a subinterface's parent port).
+  note: |
+    Expresses simple 1:1 containment: "this interface is configured on
+    that port." For a subinterface `ge-0/0/0.100`, `parent.name` =
+    `ge-0/0/0`. For a top-level physical port or LAG, this is absent.
+
+    This is the structural relationship. For protocol-stacking
+    (which interfaces carry this one's traffic), see `lower_layer.name`.
+  examples: ["ge-0/0/0", "Ethernet1/1", "Bundle-Ether1"]
+
+- key: network.interface.lower_layer.name
+  type: string[]
+  stability: development
+  brief: >
+    The `network.interface.name`(s) of the interface(s) this one runs on top of in the protocol stack.
+  note: |
+    Expresses the protocol-layering stack: "what carries my traffic."
+    A LAG's lower layers are its member physical ports. A VLAN
+    subinterface's lower layer is the trunk port or LAG. An IP
+    interface's lower layer is the VLAN subinterface beneath it.
+
+    Multi-valued for fan-out (LAG members); single-valued for simple
+    stacking (subif → port). Absent for the bottom of the stack
+    (physical ports).
+
+    Mirrors RFC 2863 ifStackTable, OpenConfig `lower-layer-if`, and
+    TR-181 `LowerLayers`. Together with `parent.name`, this makes
+    IP-over-VLAN-over-LAG-over-port fully expressible.
+  examples: [["ge-0/0/0", "ge-0/0/1"], ["Bundle-Ether1"]]
+
+# higher_layer.name[] — the upward (inverse) direction of lower_layer.name[].
+# The interface(s) running directly on top of this one: a physical port's
+# higher layers are the LAG and/or subinterfaces stacked on it; a LAG's
+# higher layers are the VLAN/IP interfaces it carries. Exact bidirectional
+# inverse of lower_layer.name: B ∈ A.higher_layer ⇔ A ∈ B.lower_layer.
+# Mirrors RFC 2863 ifStackTable's higher-layer direction and OpenConfig
+# higher-layer-if. Top-of-stack interfaces omit it (mirroring bottom-of-stack
+# interfaces omitting lower_layer).
+- key: network.interface.higher_layer.name
+  type: string[]
+  stability: development
+  brief: >
+    The `network.interface.name`(s) of the interface(s) running directly on top of this one in the protocol stack — the inverse of `network.interface.lower_layer.name`.
+  note: |
+    Expresses the upward protocol-layering direction: "what runs on top
+    of me." The exact bidirectional inverse of
+    `network.interface.lower_layer.name`: interface B appears in A's
+    `higher_layer` set if and only if A appears in B's `lower_layer` set.
+    A physical port's higher layers are the LAG and/or subinterfaces
+    stacked on it; a LAG's higher layers are the VLAN/IP interfaces it
+    carries.
+
+    Multi-valued for fan-out (a port carrying several stacked interfaces);
+    single-valued for simple stacking. Absent for the top of the stack
+    (the topmost IP interface), mirroring how `lower_layer.name` is absent
+    for the bottom of the stack (physical ports).
+
+    The value is the `network.interface.name`(s) of the higher interfaces,
+    consistent with the foreign-key convention used by
+    `network.interface.lower_layer.name` and exactly as `network.lag.members`
+    is handled. Mirrors RFC 2863 ifStackTable (higher-layer direction) and
+    OpenConfig `higher-layer-if`.
+  examples: [["Bundle-Ether1"], ["ge-0/0/0.100", "ge-0/0/0.200"]]
+
+# --- VLAN membership ----------------------------------------------------
+- key: network.interface.vlan.mode
+  type:
+    members:
+    - id: access
+      value: "access"
+      brief: Port carries a single untagged VLAN.
+      stability: development
+    - id: trunk
+      value: "trunk"
+      brief: Port carries multiple tagged VLANs.
+      stability: development
+    - id: hybrid
+      value: "hybrid"
+      brief: Port carries both tagged and untagged traffic.
+      stability: development
+    - id: dot1q_tunnel
+      value: "dot1q_tunnel"
+      brief: >
+        QinQ tunnel port — incoming frames are S-tagged (provider bridging / 802.1ad).
+      stability: development
+  stability: development
+  brief: >
+    The switchport VLAN trunking mode of the interface.
+  note: >
+    Orthogonal to `network.interface.role`. Describes how the port handles VLAN tags, not its topological purpose.
+
+- key: network.interface.vlan.native
+  type: int
+  stability: development
+  brief: >
+    The native (untagged) VLAN ID on a trunk or hybrid port.
+  examples: [1, 100]
+
+- key: network.interface.vlan.tagged
+  type: int[]
+  stability: development
+  brief: >
+    The list of tagged VLAN IDs allowed on a trunk or hybrid port.
+  note: >
+    Bounded by configuration — typically tens to low hundreds of VLANs per trunk. Entity-appropriate.
+  examples: [[10, 20, 30], [100, 200, 300, 400]]
+
+- key: network.interface.vlan.outer
+  type: int
+  stability: development
+  brief: >
+    The outer VLAN identifier that a provider-bridging / dot1q-tunnel port pushes as the outermost 802.1ad tag (the 802.1ad S-VLAN).
+  note: >
+    Set on an interface with `network.interface.vlan.mode = dot1q_tunnel`. "Outer" is the universal position term — the outer tag in a packet decode, OpenConfig `outer-vlan-id`, ECS outer `network.vlan`; "service VLAN" / "S-VLAN" is the IEEE 802.1ad role synonym for the same tag. Pushed with TPID 0x88A8 (OpenConfig `TPID_0X88A8`). Customer C-VLANs (the inner tags) arriving on the port are carried transparently and, on a pure tunnel port, are opaque and not enumerated (selective outer↔inner mapping is a deferred metro-Ethernet concern). References a `network.vlan` entity on the device.
+
+    Entity/config layer — inner/outer is expressed by port configuration here, NOT by a parallel `network.inner.vlan` field set. The observed-traffic tag stack is the ordered `network.flow.vlan.stack` on flow records; the deferred selective layer uses OpenConfig `outer-vlan-id` / `inner-vlan-id` wording.
+  examples: [1000, 2001]
+
+# --- Routed sub-interface encapsulation VLAN ------------------
+# Distinct from the switchport vlan.* membership above. A ROUTED
+# (sub)interface TERMINATES an encapsulation: it pops the tag(s) and routes
+# the payload at L3 (e.g. `ge-0/0/0.835` terminating S-VLAN 835 for BGP).
+# That is not switchport membership (vlan.mode/native/tagged) nor a
+# provider-bridging push (vlan.outer, which requires mode=dot1q_tunnel) —
+# those describe bridging behaviour. Mirrors OpenConfig subinterface
+# `vlan/match/single-tagged` and `double-tagged` outer/inner.
+- key: network.interface.encapsulation.outer_vlan
+  type: int
+  stability: development
+  brief: >
+    The (outer) VLAN ID a routed (sub)interface terminates as its encapsulation — the single tag of a single-tagged sub-interface, or the outer (S-VLAN) tag of a double-tagged (QinQ) routed sub-interface.
+  note: |
+    The encapsulation a ROUTED sub-interface pops to reach L3, not switchport
+    VLAN membership. For `ge-0/0/0.835` terminating S-VLAN 835,
+    this is 835 — the tag that otherwise lives only implicitly in the
+    interface id. Distinct from `network.interface.vlan.outer`, which is the
+    tag a `dot1q_tunnel` switchport PUSHES (bridging), not one a routed
+    interface TERMINATES.
+
+    Single-tagged: set only this. Double-tagged (QinQ) routed sub-interface:
+    set this (S-VLAN) plus `network.interface.encapsulation.inner_vlan`
+    (C-VLAN). Mirrors OpenConfig `single-tagged`/`double-tagged` match.
+  examples: [835, 100, 4001]
+
+- key: network.interface.encapsulation.inner_vlan
+  type: int
+  stability: development
+  brief: >
+    The inner (C-VLAN) tag a double-tagged (QinQ) routed sub-interface terminates, paired with `network.interface.encapsulation.outer_vlan`.
+  note: >
+    Set only on a double-tagged routed sub-interface (the carrier QinQ termination case, e.g. `ge-0/0/0.835.100`). Absent for a single-tagged sub-interface.
+  examples: [100, 2002]
+
+# === Power over Ethernet — the negotiation facets =============
+# The physical/network split applied to power: the PHYSICAL power telemetry of a
+# PoE port — actual power draw, voltage, current, port power status — is a
+# hardware-FRU fact and stays on `hw.*` (`hw.power`/`hw.voltage`/`hw.current`/
+# `hw.status`, keyed by `hw.id`; the optical-DOM precedent). The
+# attributes below are ONLY the network-negotiation outcome `hw.*` structurally
+# cannot express — the PoE sibling of `network.interface.duplex`: a
+# negotiated, operational, protocol-driven result (role, class, priority,
+# delivery state, the allocated-vs-requested contract). The PD's request rides
+# LLDP-MED extended-power-via-MDI — a network discovery fact, tying these to
+# the authored `model/lldp/`.
+#
+# Prior art: IEEE 802.3af/at/bt, RFC 3621 POWER-ETHERNET-MIB
+# (pethPsePortPowerClassifications / pethPsePortDetectionStatus /
+# pethMainPseUsageThreshold), LLDP-MED extended power-via-MDI (ANSI/TIA-1057).
+- key: network.interface.poe.role
+  type:
+    members:
+    - id: pse
+      value: "pse"
+      brief: >
+        Power-sourcing equipment — the port SUPPLIES power (a switch access port feeding an AP/phone/camera).
+      stability: development
+    - id: pd
+      value: "pd"
+      brief: >
+        Powered device — the port is BEING powered over its uplink (the AP/phone/camera side; the self-reported view).
+      stability: development
+  stability: development
+  brief: >
+    The PoE role of the interface — whether it sources power or is powered.
+  note: >
+    The negotiated power role, which `hw.*` has no concept of. `pse` is the switch/injector access port; `pd` is the device-as-client view (an AP reporting its own powered uplink). Answers "is this port feeding power or drawing it?".
+
+- key: network.interface.poe.standard
+  type:
+    members:
+    - id: dot3af
+      value: "802.3af"
+      brief: IEEE 802.3af (PoE, Type 1) — up to ~15.4 W at the PSE.
+      stability: development
+    - id: dot3at
+      value: "802.3at"
+      brief: IEEE 802.3at (PoE+, Type 2) — up to ~30 W at the PSE.
+      stability: development
+    - id: dot3bt_type3
+      value: "802.3bt_type3"
+      brief: IEEE 802.3bt Type 3 — up to ~60 W at the PSE.
+      stability: development
+    - id: dot3bt_type4
+      value: "802.3bt_type4"
+      brief: IEEE 802.3bt Type 4 — up to ~90 W at the PSE.
+      stability: development
+  stability: development
+  brief: >
+    The IEEE 802.3 PoE standard/type negotiated on the interface.
+  note: >
+    Open enum, lowercase. The negotiated PoE generation (the power-budget envelope), distinct from the per-power-class `network.interface.poe.class` below. Vendor "UPoE"/"PoH" pre-standard modes MAY use a custom value.
+
+- key: network.interface.poe.class
+  type: int
+  stability: development
+  brief: >
+    The negotiated PoE power class (IEEE 802.3 classification, 0–8).
+  note: >
+    The classification-handshake result — the power class the PD signalled and the PSE granted (class 0–4 for 802.3af/at, 5–8 for 802.3bt). The PoE analogue of the speed/duplex auto-negotiation outcome; the per-class power ceiling, not the actual draw (`hw.power`).
+  examples: [0, 4, 8]
+
+- key: network.interface.poe.priority
+  type:
+    members:
+    - id: critical
+      value: "critical"
+      brief: Highest priority — powered last to be shed under budget pressure.
+      stability: development
+    - id: high
+      value: "high"
+      brief: High priority.
+      stability: development
+    - id: low
+      value: "low"
+      brief: Low priority — shed first when the PSE power budget is exceeded.
+      stability: development
+  stability: development
+  brief: >
+    The configured power priority used for budget load-shedding.
+  note: >
+    A pure config/protocol property (RFC 3621 `pethPsePortPowerPriority`) with no `hw.*` equivalent: when the chassis PoE budget is exceeded, the PSE drops `low` ports before `high`/`critical`. Determines which ports survive a power-budget event.
+
+- key: network.interface.poe.state
+  type:
+    members:
+    - id: delivering
+      value: "delivering"
+      brief: Power is being delivered to a detected PD.
+      stability: development
+    - id: searching
+      value: "searching"
+      brief: >
+        Enabled and searching — no PD detected yet (RFC 3621 `searching`).
+      stability: development
+    - id: disabled
+      value: "disabled"
+      brief: PoE administratively disabled on the port.
+      stability: development
+    - id: denied
+      value: "denied"
+      brief: >
+        Power denied — the PD's demand exceeds the available budget or the configured per-port limit (RFC 3621 `deny`).
+      stability: development
+    - id: fault
+      value: "fault"
+      brief: >
+        A fault halted delivery — over-current, short, or detection/ signature error (RFC 3621 `fault`/`otherFault`).
+      stability: development
+  stability: development
+  brief: >
+    The operational PoE delivery state of the port.
+  note: >
+    The runtime delivery state (the enum-as-attribute current-state pattern), finer than the coarse `hw.status` of the port FRU: it distinguishes a healthy idle port (`searching`) from a budget refusal (`denied`) from a hardware fault (`fault`). The `denied`/`fault` transition is the PoE instance of the `power` event fault reason already in the event envelope.
+
+# The negotiated watt values (allocated/requested) are GAUGE METRICS, not
+# attributes — an ops engineer sums/trends/alerts on them (the PoE budget
+# dashboard); see model/interface/metrics.yaml. Actual draw is
+# `hw.power`; the class-based ceiling is `network.interface.poe.class` above.

@@ -1,0 +1,58 @@
+# gNMI validation path: SR Linux --gNMI--> gnmic --OTLP--> otelcol [OTTL] --OTLP--> weaver
+#
+# SR Linux + the `srlmgmt` network are created by containerlab (run-gnmi.sh /
+# ../native-srl). This compose adds gnmic, the collector, and weaver.
+name: netlab-gnmi
+
+services:
+  weaver-livecheck:
+    image: ${WEAVER_IMAGE:-otel/weaver:latest}
+    container_name: gnmi-weaver
+    working_dir: /work
+    volumes:
+      - ../..:/work:ro
+      - ./out:/out
+    networks: [srlmgmt]
+    command:
+      - registry
+      - live-check
+      - -r
+      - model
+      - --input-source
+      - otlp
+      - --otlp-grpc-address
+      - 0.0.0.0
+      - --otlp-grpc-port
+      - "4317"
+      - --inactivity-timeout
+      - "0"
+      - --format
+      - json
+      - --output
+      - /out
+
+  # OTTL crosswalk: gNMI/OpenConfig metric names + tags -> network.*
+  gnmi-otelcol:
+    image: ${OTELCOL_IMAGE:-otel/opentelemetry-collector-contrib:latest}
+    container_name: gnmi-otelcol
+    networks: [srlmgmt]
+    depends_on: [weaver-livecheck]
+    environment:
+      WEAVER_ENDPOINT: gnmi-weaver:4317
+    volumes:
+      - ./otelcol-gnmi.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+  # gNMI client: subscribe to SR Linux, export OTLP to the collector above
+  gnmic:
+    image: ${GNMIC_IMAGE:-ghcr.io/openconfig/gnmic:latest}
+    container_name: gnmic
+    networks: [srlmgmt]
+    depends_on: [gnmi-otelcol]
+    volumes:
+      - ./gnmic.yaml:/gnmic.yaml:ro
+    command: ["--config", "/gnmic.yaml", "subscribe"]
+
+networks:
+  srlmgmt:
+    name: srlmgmt
+    external: true

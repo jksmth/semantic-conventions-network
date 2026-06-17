@@ -1,0 +1,160 @@
+---
+file_format: definition/2
+
+# network-lag — the link-aggregation BUNDLE, the bundle half of the
+# LAG/interface duality.
+#
+# A LAG (Link Aggregation Group, IEEE 802.1AX — the vendor-neutral term;
+# port-channel/EtherChannel = Cisco, bond = Linux, aggregate/ae = Juniper; NOTE
+# "trunk" is avoided — it collides with VLAN trunking) is two views of one thing:
+#   - the FORWARDING / COUNTER view  → the `network.interface` of `type=lag`
+#     (io/packets/errors/discards, admin/oper state, speed = sum of members) —
+#     the existing interface metrics, UNCHANGED.
+#   - the BUNDLE view                → `network.lag` (this package): which members,
+#     min-links, LACP mode/rate, bundle health.
+# Related by id: `network.lag.id` corresponds in value to the `type=lag`
+# `network.interface.name`. Counters do NOT move here (the `network.link` discipline
+# — topology/health on the bundle object, counters on the interface).
+#
+# The LACP three-way split — LACP is three facts in three homes:
+#   1. ADJACENCY HEALTH (Collecting_Distributing / Attached / Detached) → a
+#      `network.neighbor` `protocol=lacp`, one per MEMBER port (authored; the
+#      LACP row is already in the state table). NOT here.
+#   2. THE AGGREGATE (mode/rate/system-id/min-links/bundle state) → `network.lag`
+#      (this package). The bundle-level reading of the "LACP partner state".
+#   3. The PARTNER SESSION BUNDLE (per-member actor/partner system-id + port + key
+#      + mux FSM) → a future `network-session` package. The same session depth as
+#      PPPoE / IKE SAs. NOT here.
+#
+# Cardinality: a LAG is an ENTITY (bounded by config — tens per device);
+# its members are a BOUNDED id-LIST attribute (a bundle holds <= the platform max,
+# typically 8/16/32/64), not a count and not per-member entities — the
+# `network.stp.instance.vlans[]` precedent. See docs/conventions.md (cardinality firewall).
+#
+# Multi-chassis (already authored): an ESI-LAG / MLAG bundle REFERENCES
+# the already-authored `network.evpn.esi` and `network.redundancy.group.id`;
+# single-chassis LAGs omit them. No new multi-chassis attribute here.
+#
+# Prior art: IEEE 802.1AX (LAG + LACP), IEEE 802.1AX-2014 (DRNI / multi-chassis);
+# openconfig-lacp + openconfig-if-aggregate (aggregate-id, min-links, lag-type,
+# mode, system-id); TR-181 Device.Ethernet.Link; IEEE8023-LAG-MIB.
+
+attributes:
+# --- Identity ----------------------------------------------------------
+- key: network.lag.id
+  type: string
+  stability: development
+  brief: >
+    Identifier of the LAG bundle, unique within the owning device.
+  note: |
+    A device-scoped sub-entity: the full identity is
+    (`network.device.id`, `network.lag.id`), and the owning `network.device`
+    MUST be present in the same Resource. It corresponds in value to the
+    `network.interface.name` of the `type=lag` interface that carries the bundle's
+    forwarding/counter view — the two are related by this shared id.
+    See docs/entity-model.md (sub-entity identity).
+  examples: ["Port-Channel1", "ae0", "bond0", "po10"]
+
+# --- Membership --------------------------------------------------------
+- key: network.lag.members
+  type: string[]
+  stability: development
+  brief: >
+    The member interfaces of the bundle, as a list of `network.interface.name` values on the owning device.
+  note: >
+    A BOUNDED id-list entity attribute whose values are interface NAMES — each element is a `network.interface.name` on the owning device (the same identity key the interface entity is keyed on), NOT an opaque numeric id. A bundle holds at most the platform maximum (typically 8/16/32/64), so members are listed on the entity — never per-member entities and never a metric dimension. Each member's own forwarding counters remain on its `network.interface`; each member's LACP partner ADJACENCY is a `network.neighbor` `protocol=lacp`, not listed here.
+  examples: [["Ethernet1", "Ethernet2"], ["xe-0/0/0", "xe-0/0/1"]]
+
+- key: network.lag.min_links
+  type: int
+  stability: development
+  brief: >
+    The minimum number of active member links required for the bundle to be operationally up.
+  note: >
+    When fewer than `min_links` members are active the bundle is down (or `degraded`, per `network.lag.state`). The configured ceiling for the degraded condition.
+  examples: [1, 2]
+
+# --- LACP (aggregate facet only) ---------------------------------------
+- key: network.lag.lacp.mode
+  type:
+    members:
+    - id: active
+      value: "active"
+      brief: LACP active — the device initiates LACP negotiation.
+      stability: development
+    - id: passive
+      value: "passive"
+      brief: >
+        LACP passive — the device responds to but does not initiate LACP.
+      stability: development
+    - id: "off"
+      value: "off"
+      brief: >
+        No LACP — a static / manual aggregation (Cisco `mode on`, OpenConfig `lag-type=STATIC`). The bundle has no LACP adjacencies.
+      stability: development
+  stability: development
+  brief: >
+    The LACP negotiation mode of the bundle (or `off` for static aggregation).
+  note: >
+    Open enum, lowercase. The AGGREGATE-level LACP facet; the per-member partner adjacency lives on `network.neighbor` `protocol=lacp`, and the deep partner session bundle is deferred to a future `network-session` package.
+
+- key: network.lag.lacp.rate
+  type:
+    members:
+    - id: fast
+      value: "fast"
+      brief: Fast rate — LACPDUs every 1 second.
+      stability: development
+    - id: slow
+      value: "slow"
+      brief: Slow rate — LACPDUs every 30 seconds (the default).
+      stability: development
+  stability: development
+  brief: >
+    The LACPDU transmit rate of the bundle.
+  note: >
+    Meaningful only when `network.lag.lacp.mode` is `active`/`passive`. Open enum, lowercase.
+
+- key: network.lag.lacp.system_id
+  type: string
+  stability: development
+  brief: >
+    The LACP actor System ID of the bundle (the device's LACP system MAC, optionally prefixed by the system priority).
+  note: >
+    The bundle's own (actor) LACP identity. The partner's System ID — and the per-member partner port/key/mux state machine — are the deferred session bundle, not carried here. On an MLAG pair both chassis usually present the SAME LACP system-id to the partner (so the bundle looks like one switch); that shared id is a `network.address.role`-style replicated identity and the pair is a `network.redundancy.group`.
+  examples: ["00:00:5e:00:53:01", "32768,00:1c:73:00:00:99"]
+
+# --- State -------------------------------------------------------------
+- key: network.lag.state
+  type:
+    members:
+    - id: up
+      value: "up"
+      brief: The bundle is operational (at least `min_links` members active).
+      stability: development
+    - id: down
+      value: "down"
+      brief: >
+        The bundle is down (no active members, or fewer than `min_links`).
+      stability: development
+    - id: degraded
+      value: "degraded"
+      brief: >
+        The bundle is up but impaired — one or more members are down while still meeting `min_links` (the explicit up-but-below-full-capacity condition).
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: State cannot be determined.
+      stability: development
+  stability: development
+  brief: >
+    The operational state of the LAG bundle.
+  note: >
+    The same coarse health vocabulary as `network.tunnel.state` / `network.link.state` (`up·down·degraded·unknown`), with `degraded` carrying the LAG-specific "up but a member is down / below full capacity" meaning. Per-member liveness is the member's `network.neighbor` (`protocol=lacp`) state, not this bundle-level state. Open enum, lowercase.
+
+- key: network.lag.native_state
+  type: string
+  stability: development
+  brief: >
+    The verbatim, vendor-native bundle state string.
+  examples: ["up", "down", "minlinks-not-met", "lacp-down"]

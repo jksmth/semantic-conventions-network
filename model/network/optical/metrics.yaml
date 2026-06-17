@@ -1,0 +1,120 @@
+---
+file_format: definition/2
+metrics:
+# Optical SIGNAL metrics (hw.* has no concept of these). Module
+# environmental telemetry (temperature, voltage, status) is hw.* and is
+# intentionally NOT duplicated here. See docs/architecture.md (namespace
+# layering).
+- name: network.optical.power
+  stability: development
+  brief: >
+    Optical power transmitted or received on the channel.
+  note: |
+    Unit is `dB[mW]` (decibel-milliwatts, UCUM) — NOT the literal `dBm`.
+    `network.io.direction` distinguishes Tx from Rx. This is the primary
+    health signal of every optic (grey or coherent); on grey/direct-detect
+    optics it is often the only `network.optical.*` value reported (the
+    coherent metrics below are opt-in and simply absent).
+
+    Warn/alarm thresholds for module temperature/voltage are `hw.*`
+    (`hw.temperature.limit`, `hw.status`); optical-power thresholds and the
+    threshold-crossing event are deferred to a later threshold/event pass.
+  instrument: gauge
+  unit: "dB[mW]"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.bias_current
+  stability: development
+  brief: >
+    Laser bias current of the transmitting optic.
+  note: >
+    A laser operating-point value (SFF-8472 DOM). Kept in `network.optical.*` rather than `hw.current` because it is laser/optical-signal telemetry, not a generic component rail current.
+  instrument: gauge
+  unit: "A"
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.osnr
+  stability: development
+  brief: >
+    Optical signal-to-noise ratio of the (coherent) carrier.
+  note: >
+    Coherent endpoint metric (opt-in for grey optics, which do not report it). Unit `dB` (a ratio), not `dB[mW]`.
+  instrument: gauge
+  unit: "dB"
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.ber
+  stability: development
+  brief: >
+    Bit error ratio of the carrier, before or after FEC.
+  note: >
+    Dimensionless ratio (`1`). `network.optical.fec.stage` selects pre- vs post-FEC. Coherent endpoint metric (opt-in for grey optics).
+  instrument: gauge
+  unit: "1"
+  attributes:
+  - ref: network.optical.fec.stage
+    requirement_level: required
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.chromatic_dispersion
+  stability: development
+  brief: >
+    Chromatic dispersion measured/compensated by the coherent receiver.
+  instrument: gauge
+  unit: "ps/nm"
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.pmd
+  stability: development
+  brief: >
+    Polarization mode dispersion measured by the coherent receiver.
+  instrument: gauge
+  unit: "ps"
+  entity_associations:
+  - network.optical.channel
+
+# --- DOM threshold limits (the configured warn/alarm trip points) ------
+# The configured-limit companions to network.optical.power / .bias_current:
+# the SFP/SFP+ DOM (SFF-8472) high/low warn and alarm trip points. The
+# threshold-CROSSING event is network.optical.threshold_crossed (events.yaml);
+# these gauges publish the LIMIT VALUES themselves as series, so a dashboard can
+# draw the alarm/warn bands around the live network.optical.power reading. The
+# trip point is selected by the upstream hw.limit_type (DOM alarm -> *.critical,
+# DOM warning -> *.degraded), reused not redefined.
+- name: network.optical.power.limit
+  stability: development
+  brief: >
+    Configured alarm/warning threshold for optical signal power.
+  note: >
+    Unit `dB[mW]` (decibel-milliwatts, UCUM) — the same unit as `network.optical.power`. `network.io.direction` distinguishes the receive vs transmit threshold; `hw.limit_type` distinguishes the high/low alarm and warning trip points (SFF-8472 DOM: alarm -> the `*.critical` values, warning -> the `*.degraded` values). Rx-power-low is the operationally important band — the early warning a span/connector/transceiver is degrading before the port drops.
+  instrument: gauge
+  unit: "dB[mW]"
+  attributes:
+  - ref: network.io.direction
+    requirement_level: required
+  - ref: hw.limit_type
+    requirement_level: required
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.bias_current.limit
+  stability: development
+  brief: >
+    Configured alarm/warning threshold for transmitter laser bias current.
+  note: >
+    Amperes (A) — the same unit as `network.optical.bias_current`. `hw.limit_type` distinguishes the high/low alarm and warning trip points (SFF-8472 DOM: alarm -> `*.critical`, warning -> `*.degraded`). A bias-current high-alarm trip is the classic ageing-transmitter signal.
+  instrument: gauge
+  unit: "A"
+  attributes:
+  - ref: hw.limit_type
+    requirement_level: required
+  entity_associations:
+  - network.optical.channel

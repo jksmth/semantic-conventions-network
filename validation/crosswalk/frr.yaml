@@ -1,0 +1,74 @@
+# Crosswalk: FRR `vtysh ... json`  ->  network.* semconv.
+#
+# Keyed by IR record `kind`. The engine (engine/mapper.py) is generic over this
+# grammar; only this file + engine/transforms.py know FRR's field names. A new
+# entity type = a new block here + the adapter populating that kind.
+#
+# field-spec grammar:
+#   {const: X}              literal
+#   {from: __device_id__}   the adapter-derived device identity
+#   {from: __index__}       the record's instance key (ifname / peer address)
+#   {from: role}            another field on the record (operator metadata)
+#   {field: F}              source-native field F
+#   {field: F, transform: T}  ... through named transform T
+#   optional: true          omit if the source value is missing
+
+source: frr-vtysh
+
+records:
+  device:
+    entity: network.device
+    identity:
+      network.device.id: {from: __device_id__}
+    description:
+      network.device.type: {const: router}
+      network.device.role: {from: role}
+      network.device.vendor.name: {const: frrouting}
+      os.name: {const: FRR}
+      network.oper.state: {const: enabled}
+
+  interface:
+    entity: network.interface
+    identity:
+      network.device.id: {from: __device_id__}
+      network.interface.name: {from: __index__}
+    description:
+      network.interface.admin.state: {field: administrativeStatus, transform: lower}
+      network.interface.oper.state: {field: operationalStatus, transform: lower}
+      network.interface.type: {field: type, transform: iface_type}
+      network.interface.mtu: {field: mtu}
+      network.interface.mac: {field: hardwareAddress, transform: mac_ieee, optional: true}
+    metrics:
+      - name: network.interface.speed
+        instrument: gauge
+        unit: "bit/s"
+        skip_if_value_zero: true
+        points:
+          - value: {field: speed, transform: mbps_to_bps}
+      - name: network.interface.oper.status
+        instrument: updowncounter
+        unit: "1"
+        points:
+          - value: {const: 1}
+            attributes:
+              network.interface.oper.state: {field: operationalStatus, transform: lower}
+      - name: network.interface.admin.status
+        instrument: updowncounter
+        unit: "1"
+        points:
+          - value: {const: 1}
+            attributes:
+              network.interface.admin.state: {field: administrativeStatus, transform: lower}
+
+  neighbor:
+    entity: network.neighbor
+    identity:
+      network.device.id: {from: __device_id__}
+      network.neighbor.id: {from: __index__}
+      network.neighbor.protocol: {const: bgp}
+    description:
+      network.neighbor.address: {from: __index__}
+      network.neighbor.as.number: {field: remoteAs}
+      network.neighbor.state: {field: bgpState, transform: bgp_state}
+      network.neighbor.native_state: {field: bgpState}
+      network.address_family: {const: ipv4_unicast}
