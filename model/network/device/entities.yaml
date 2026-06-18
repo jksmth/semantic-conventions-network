@@ -95,6 +95,8 @@ entities:
     `CHASSIS` and ENTITY-MIB `entPhysicalClass` chassis(3).
   identity:
   - ref: network.chassis.id
+  # Device scope — the full identity is the (device.id, chassis.id) pair.
+  - ref: network.device.id
   description:
   - ref: network.chassis.slot
     requirement_level: opt_in
@@ -123,6 +125,8 @@ entities:
     `CONTROLLER_CARD`, `FABRIC`, and ENTITY-MIB module(9).
   identity:
   - ref: network.module.id
+  # Device scope — the full identity is the (device.id, module.id) pair.
+  - ref: network.device.id
   description:
   - ref: network.module.type
     requirement_level: recommended
@@ -160,6 +164,8 @@ entities:
     (inventory containers), not to components with actual telemetry.
   identity:
   - ref: network.component.id
+  # Device scope — the full identity is the (device.id, component.id) pair.
+  - ref: network.device.id
   description:
   - ref: network.component.type
     requirement_level: recommended

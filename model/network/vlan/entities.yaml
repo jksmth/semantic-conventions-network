@@ -23,6 +23,8 @@ entities:
     Identity is scoped by device — (`network.device.id`, `network.vlan.id`).
   identity:
   - ref: network.vlan.id
+  # Device scope — the full identity is the (device.id, vlan.id) pair.
+  - ref: network.device.id
   description:
   - ref: network.vlan.name
     requirement_level: recommended

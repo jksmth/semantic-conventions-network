@@ -94,6 +94,26 @@ metrics:
   entity_associations:
   - network.device
 
+- name: network.pon.onu.provisioning.status
+  stability: development
+  brief: >
+    The ONU's provisioning (configuration) state (enum-as-attribute status metric — UpDownCounter, per the OTel status-metrics guide).
+  note: |
+    The K8s `status.phase` pattern: one series per possible
+    `network.pon.onu.provisioning.state` value, value 1 for the ONU's current
+    provisioning state. The management / config-plane axis, orthogonal to the
+    PLOAM activation status (`network.pon.onu.state`) and the X.731 admin/oper
+    status metrics. The OLT / management system is the `network.observer`
+    (`collection.method=omci`); an `unprovisioned` result is reported when the
+    management system has no configuration for the ONU.
+  instrument: updowncounter
+  unit: "1"
+  attributes:
+  - ref: network.pon.onu.provisioning.state
+    requirement_level: required
+  entity_associations:
+  - network.device
+
 - name: network.pon.onu.distance
   stability: development
   brief: >

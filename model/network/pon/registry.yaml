@@ -161,6 +161,36 @@ attributes:
     The verbatim, vendor-native ONU activation state string.
   examples: ["O5-Operation", "O4-Ranging", "emergency-stop", "los"]
 
+# --- ONU provisioning state (the management / config plane) ------------
+# Provisioning = has the operator applied configuration to ADOPT this ONU
+# (assigned ONU-ID, service profile)? This is the management-plane axis and
+# is ORTHOGONAL to network.pon.onu.state (PLOAM activation) and to
+# network.admin.state / network.oper.state (X.731 managed-entity intent /
+# capability). An ONU can be `operational` on the PON yet `unprovisioned`
+# (autofound / unknown ONU, no config), or `provisioned` yet `offline`.
+- key: network.pon.onu.provisioning.state
+  type:
+    members:
+    - id: provisioned
+      value: "provisioned"
+      brief: >
+        The operator has applied configuration to the ONU (assigned ONU-ID, service profile) — it is adopted and managed.
+      stability: development
+    - id: unprovisioned
+      value: "unprovisioned"
+      brief: >
+        No configuration has been applied — the ONU may be physically present / discoverable on the PON but has not been adopted (the OLT "autofound" / unknown-ONU case).
+      stability: development
+    - id: unknown
+      value: "unknown"
+      brief: The provisioning state cannot be determined.
+      stability: development
+  stability: development
+  brief: >
+    The ONU's management-plane provisioning (configuration) state — whether the operator has applied configuration to adopt and configure the ONU.
+  note: >
+    The CONFIG / management-plane axis, orthogonal to the PLOAM activation axis (`network.pon.onu.state`: offline/ranging/operational) and to the X.731 managed-entity axes (`network.admin.state` / `network.oper.state`). An ONU can be `operational` on the PON yet `unprovisioned` (discovered but no service config), or `provisioned` yet `offline`. This is the native term in ITU-T G.988 (OMCI) / Nokia ISAM operations: a provisioned ONT is a managed entity, an unprovisioned one is not yet created. Open enum, lowercase — a producer with visibility of the OLT autofind list MAY add a `discovered` value (seen-but-not-configured) distinct from the generic `unprovisioned`.
+
 # --- DBA (upstream bandwidth) ------------------------------------------
 - key: network.pon.tcont.id
   type: int

@@ -18,6 +18,8 @@ entities:
     `network.lag`, related by id.
   identity:
   - ref: network.interface.name
+  # Device scope — the full identity is the (device.id, interface.name) pair.
+  - ref: network.device.id
   description:
   - ref: network.interface.description
     requirement_level: recommended

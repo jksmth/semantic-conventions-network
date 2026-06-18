@@ -46,6 +46,8 @@ entities:
   identity:
   - ref: network.neighbor.id
   - ref: network.neighbor.protocol
+  # Device scope — full identity is the (device.id, protocol, neighbor.id) tuple.
+  - ref: network.device.id
   description:
   - ref: network.neighbor.address
     requirement_level: recommended

@@ -36,6 +36,8 @@ entities:
     docs/entity-model.md (sub-entity identity).
   identity:
   - ref: network.stp.instance.id
+  # Device scope — the full identity is the (device.id, stp.instance.id) pair.
+  - ref: network.device.id
   description:
   - ref: network.stp.mode
     requirement_level: recommended

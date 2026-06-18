@@ -44,6 +44,8 @@ entities:
       overlay-rides-underlay relationship, remain deferred.
   identity:
   - ref: network.tunnel.id
+  # Device scope — the full identity is the (device.id, tunnel.id) pair.
+  - ref: network.device.id
   description:
   - ref: network.tunnel.type
     requirement_level: recommended

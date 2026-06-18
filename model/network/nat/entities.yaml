@@ -28,6 +28,8 @@ entities:
     `network.nat.port_block_exhausted` are the raised/cleared alarms.
   identity:
   - ref: network.nat.pool.id
+  # Device scope — the full identity is the (device.id, nat.pool.id) pair.
+  - ref: network.device.id
   description:
   - ref: network.nat.pool.type
     requirement_level: recommended

@@ -50,6 +50,8 @@ entities:
     TR-181 `Device.Ethernet.Link` aggregation.
   identity:
   - ref: network.lag.id
+  # Device scope — the full identity is the (device.id, lag.id) pair.
+  - ref: network.device.id
   description:
   - ref: network.lag.members
     requirement_level: recommended

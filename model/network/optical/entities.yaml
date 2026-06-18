@@ -29,6 +29,9 @@ entities:
     docs/entity-model.md (sub-entity identity).
   identity:
   - ref: network.optical.channel.id
+  # Device scope — the full identity is the (device.id, channel.id) pair, so
+  # the entity is self-identifying regardless of whose Resource carries it.
+  - ref: network.device.id
   description:
   - ref: network.optical.channel.type
     requirement_level: recommended

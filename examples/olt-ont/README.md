@@ -206,6 +206,7 @@ meaning the coarse vocabulary would lose. See
 |------|-------------|------|---------------------|
 | ONT activation state (gauge) | `network.pon.onu.state` = `offline`/`standby`/`ranging`/`operational`/`emergency_stop` | vendor PON-MIB ONU-state | `bbf-xpon` ont oper-state |
 | Verbatim vendor state | `network.pon.onu.native_state` | vendor PON-MIB | vendor state leaf |
+| ONT provisioning state (gauge) | `network.pon.onu.provisioning.status` carrying `network.pon.onu.provisioning.state` = `provisioned`/`unprovisioned`/`unknown` | vendor OMCI / OSS config | `bbf-xpon` ont config presence |
 | Ranging distance (fibre length) | `network.pon.onu.distance` (`m`) | vendor PON-MIB ranging | `bbf-xpon` ont ranging-time |
 | ONU-ID (on-tree address) | `network.pon.onu.id` | vendor PON-MIB ONU index | `bbf-xpon` ont onu-id |
 
@@ -214,6 +215,16 @@ per possible state value, value `1` for the ONT's current state — the same sha
 [L2 switch uses for spanning-tree port state](../l2-switch/README.md#6-spanning-tree).
 The ranging **distance** doubles as inventory ("ONU is 18.4 km out") and a fault
 signal (a sudden jump means a fibre/splice change).
+
+**Activation is not provisioning.** `network.pon.onu.state` is the **PLOAM /
+physical** axis (did the ONT range and come online on the fibre); `network.pon.onu.provisioning.state`
+is the **management / config** axis (has the operator applied configuration to *adopt*
+this ONT — assigned an ONU-ID and a service profile). They are orthogonal: an ONT can
+be `operational` yet `unprovisioned` (an autofound/unknown ONU the OLT sees but no one
+has configured), or `provisioned` yet `offline`. Both are distinct again from the X.731
+`network.admin.state`/`network.oper.state` (operator intent / capability of an
+already-managed entity). A pure management-plane probe (e.g. an OSS asking the OLT "is
+ONT X configured?") populates only the provisioning axis.
 
 ---
 
@@ -307,9 +318,9 @@ one Resource attribute, not every series. The same controller-relay shape is reu
 across the access estate: `omci` for PON here, `capwap` for a
 [WiFi WLC](../../docs/entity-model.md#entity-catalogue), `vmanage` for SD-WAN.
 
-The ONT's state is carried on **three orthogonal axes** (see
+The ONT's state is carried on **several orthogonal axes** (see
 [state modelling](../../docs/conventions.md#admin-oper-and-health-are-three-orthogonal-axes)),
-and an OLT exposes all three — do not conflate them:
+and an OLT exposes them all — do not conflate them:
 
 - `network.admin.state` (`locked`/`unlocked`) — has an operator administratively
   disabled the ONT (the AMS `adminState`, the RFC 8348 `admin-state`)?
@@ -318,10 +329,15 @@ and an OLT exposes all three — do not conflate them:
 - `network.pon.onu.state` (`offline`/`ranging`/`operational`/…) — the **PON
   activation** state machine (§6), a finer PON-specific axis the coarse oper-state
   cannot express.
+- `network.pon.onu.provisioning.state` (`provisioned`/`unprovisioned`/…) — the
+  **management / config** axis (§6): has the operator applied configuration to adopt
+  this ONT? Orthogonal to activation — an ONT can be `operational` yet `unprovisioned`,
+  or `provisioned` yet `offline`.
 
-Health (`hw.state`: ok/degraded/failed) is the fourth, separate axis. An ONT can be
-`admin_state=unlocked` + `oper_state=disabled` + `pon.onu.state=ranging` (admitted,
-not yet carrying traffic) — three values one merged "status" would collapse.
+Health (`hw.state`: ok/degraded/failed) is a further, separate axis. An ONT can be
+`admin_state=unlocked` + `oper_state=disabled` + `pon.onu.state=ranging` +
+`provisioning.state=provisioned` (configured and admitted, not yet carrying traffic) —
+distinct values one merged "status" would collapse.
 
 > **Still open upstream.** The precise mechanism for an observer to attach OTel
 > *entity context* to a third-party subject is pending the OpenTelemetry entities

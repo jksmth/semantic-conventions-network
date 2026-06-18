@@ -32,6 +32,8 @@ entities:
     expected in the same Resource.
   identity:
   - ref: network.wifi.radio.id
+  # Device scope — the full identity is the (device.id, wifi.radio.id) pair.
+  - ref: network.device.id
   description:
   - ref: network.wifi.radio.band
     requirement_level: recommended
@@ -84,6 +86,8 @@ entities:
     expected in the same Resource.
   identity:
   - ref: network.wifi.bss.bssid
+  # Device scope — the full identity is the (device.id, wifi.bss.bssid) pair.
+  - ref: network.device.id
   description:
   - ref: network.wifi.radio.id
     requirement_level: recommended

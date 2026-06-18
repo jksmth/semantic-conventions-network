@@ -107,7 +107,7 @@ attributes:
       stability: development
     - id: yellow
       value: "yellow"
-      brief: Exceeding — between committed and peak (CIR < rate ≤ PIR).
+      brief: Exceeding — between committed and peak (`CIR < rate ≤ PIR`).
       stability: development
     - id: red
       value: "red"

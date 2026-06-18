@@ -31,6 +31,8 @@ entities:
     contexts in TR-181 Device:2.
   identity:
   - ref: network.instance.name
+  # Device scope — the full identity is the (device.id, instance.name) pair.
+  - ref: network.device.id
   description:
   - ref: network.instance.type
     requirement_level: recommended
