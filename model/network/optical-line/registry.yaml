@@ -1,0 +1,70 @@
+---
+file_format: definition/2
+
+# network-optical-line — the DWDM / fibre LINE SYSTEM between coherent endpoints.
+#
+# Scope: the optical infrastructure the carrier crosses BETWEEN transponders —
+# the fibre spans, their loss and faults, and (in later passes) amplifiers,
+# ROADM degrees/WSS, spectrum and the OMS/OTS layer stack. This package WRAPS
+# and REFERENCES the endpoint `network.optical.channel`; it does NOT reshape it.
+#
+# Reuse-first — most of the line system is existing primitives, not new entities:
+#   - a fibre SPAN / OTS is a `network.link` (type=optical); the span metrics
+#     associate with it.
+#   - a multi-ROADM LIGHTPATH is a `network.path` (type=optical_lightpath); its
+#     per-segment span loss attaches by `network.path.id`.
+#   - a fibre-monitoring test unit (OTDR / remote test unit) that measures a
+#     route it does not terminate is the producer≠subject case: it is
+#     `network.observer.*` (observer.type probe/agent), the subject is the
+#     span/route. No new producer≠subject machinery.
+#   - fault / LOS / loss-budget conditions are `network.alarm` refinements
+#     (events.yaml), not new event names.
+# Only genuinely-new optical signal/medium quantities (span loss/length/ORL,
+# fibre type, fault distance) are added here, under the unified
+# `network.optical.*` namespace.
+#
+# This package is OPTIONAL: a transponder endpoint does not need it; a line
+# system (amplifier hut, ROADM, fibre-monitoring system) emits it.
+#
+# Prior art: ITU-T G.872 (OTN optical layers OCh/OMS/OTS), G.650/G.652/G.655
+# (fibre types + attenuation), OTDR fibre characterisation, OpenROADM, OpenConfig
+# openconfig-optical-amplifier / openconfig-wavelength-router.
+
+attributes:
+- key: network.optical.fiber.type
+  type:
+    members:
+    - id: smf
+      value: "smf"
+      brief: Generic single-mode fibre.
+      stability: development
+    - id: g652
+      value: "g652"
+      brief: ITU-T G.652 standard single-mode fibre (the common SMF).
+      stability: development
+    - id: g655
+      value: "g655"
+      brief: ITU-T G.655 non-zero dispersion-shifted fibre (NZ-DSF).
+      stability: development
+    - id: g657
+      value: "g657"
+      brief: ITU-T G.657 bend-insensitive single-mode fibre (access / drop).
+      stability: development
+    - id: mmf
+      value: "mmf"
+      brief: Multi-mode fibre.
+      stability: development
+  stability: development
+  brief: >
+    The fibre type of the span (open enum).
+  note: >
+    A descriptor of the optical `network.link` (the span). Open enum, lowercase; custom values MAY be used. Sets the expected attenuation coefficient and dispersion the span loss is read against.
+
+- key: network.optical.fault.distance
+  type: double
+  stability: development
+  brief: >
+    Distance from the test point to a detected fibre fault, in metres.
+  note: >
+    The OTDR distance-to-fault of a fibre break / high-loss event — the "where on the span" a reflectometry test (or a fibre-monitoring remote test unit) locates the fault. Carried on the `network.optical.fiber_fault` alarm (events.yaml). Metres (UCUM `m`); a source reporting kilometres is converted (×1000).
+  examples: [1850.0, 12430.5]

@@ -137,9 +137,9 @@ metrics:
 - name: network.interface.duplex
   stability: development
   brief: >
-    The duplex mode of the interface — value always 1, the mode carried in `network.interface.duplex`.
+    The operational duplex mode of the interface — value always 1, the mode carried in `network.interface.duplex`.
   note: >
-    A status metric (the K8s `status.phase` / enum-as-attribute pattern, as `network.interface.admin.status`/`oper.status`): one series per `network.interface.duplex` value, value 1 for the interface's current duplex mode, so a `sum` counts interfaces per mode. A half/full mismatch is a classic L1/L2 fault, which is why duplex is a queryable signal and not only an `info`/entity-description label. The same `network.interface.duplex` attribute is also carried on `network.interface.info` (the entity snapshot) — the deliberate status-metric ↔ info-label dual (kube-state pattern). Relevant on copper Ethernet; omitted on fiber/coherent/wireless/logical interfaces.
+    A status metric (the K8s `status.phase` / enum-as-attribute pattern, as `network.interface.admin.status`/`oper.status`): one series per `network.interface.duplex` value, value 1 for the interface's current OPERATIONAL duplex mode, so a `sum` counts interfaces per mode. The value space is `full`/`half`/`unknown` (the live negotiated mode; `unknown` when the link is down or negotiation has not completed) — NOT a configuration value. Auto-negotiation enablement is configuration, carried separately by the `network.interface.auto_negotiate` attribute on `network.interface.info`; this metric reports the operational *outcome*. A half/full mismatch (or an auto-vs-forced mismatch against the configured `auto_negotiate`) is a classic L1/L2 fault, which is why duplex is a queryable signal and not only an `info`/entity-description label. The same `network.interface.duplex` attribute is also carried on `network.interface.info` (the entity snapshot) — the deliberate status-metric ↔ info-label dual (kube-state pattern). Relevant on copper Ethernet; omitted on fiber/coherent/wireless/logical interfaces.
   instrument: updowncounter
   unit: "1"
   attributes:
@@ -251,6 +251,8 @@ metrics:
   - ref: network.interface.oper.state
     requirement_level: opt_in
   - ref: network.interface.duplex
+    requirement_level: opt_in
+  - ref: network.interface.auto_negotiate
     requirement_level: opt_in
   - ref: network.interface.speed
     requirement_level: opt_in

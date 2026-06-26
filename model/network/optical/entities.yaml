@@ -15,9 +15,10 @@ entities:
     - `network.interface.name` — the port the carrier runs on. The owning
       `network.interface` and `network.device` are expected in the same
       Resource. Correlates light levels with the port.
-    - `hw.id` — the transceiver hardware FRU, whose environmental telemetry
-      (temperature, voltage, status, serial) is `hw.*`, not
-      redefined here. See docs/architecture.md (namespace layering).
+    - `hw.id` — the transceiver hardware FRU. Its DOM diagnostics
+      (temperature, voltage) are `network.optical.temperature` / `.voltage`;
+      its generic hardware telemetry (status, serial/vendor/part) is `hw.*`,
+      not redefined here. See docs/architecture.md (namespace layering).
 
     Stable anchor: the deferred PON-access and DWDM-line-system
     optical domains wrap and reference this entity (per-ONT burst RSSI
@@ -42,7 +43,7 @@ entities:
   - ref: hw.id
     requirement_level: opt_in
     brief: >
-      The transceiver hardware FRU (pluggable) carrying this channel. Environmental telemetry (temperature/voltage/status) is reported under `hw.*` against this id.
+      The transceiver hardware FRU (pluggable) carrying this channel. Its DOM diagnostics (temperature/voltage) are `network.optical.temperature`/`.voltage`; module status/serial are `hw.*` against this id.
   - ref: network.optical.frequency
     requirement_level: opt_in
   - ref: network.optical.wavelength

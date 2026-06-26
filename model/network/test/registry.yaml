@@ -64,14 +64,24 @@ file_format: definition/2
 # API/DNS-as-app): those reuse the upstream HTTP / DNS / synthetic-monitoring-RUM
 # conventions, joined to the same run by `network.test.id`.
 #
-# Prior art: IETF IPPM — RFC 2681 (RTT), RFC 7679 (one-way delay), RFC 7680
-# (one-way loss), RFC 3393 (IPDV/jitter); TWAMP (RFC 5357); ITU-T G.107 (E-model
-# R-factor) + P.800 (MOS) for voice. Signal-shape precedent: active-measurement
-# and flow tooling already emit path/flow observations as both records and OTLP
-# spans. Upstream coordination: semconv #3682 (TCP metrics), #3740 (Autonomous
-# System enrichment → source.as.*/destination.as.*), #1721 (source.*/
-# destination.* as the home for third-party observation — see model/destination
-# for the per-hop subject enrichment).
+# Prior art — measurement methodology: IETF IPPM — RFC 2681 (RTT), RFC 7679
+# (one-way delay), RFC 7680 (one-way loss), RFC 3393 (IPDV/jitter); TWAMP
+# (RFC 5357); ITU-T G.107 (E-model R-factor) + P.800 (MOS) for voice.
+# Prior art — operational / management model: IETF LMAP (RFC 7594 framework;
+# RFC 8193 information model; RFC 8194 YANG data model). This package mirrors the
+# LMAP agent/controller/schedule/result split directly: a Measurement Agent is
+# `network.observer` (`type=agent`), a configured Measurement Task/Schedule is
+# the `network.test` entity, and a Measurement Result is the per-run
+# record/metric. That mapping is WHY `network.test.id` is the controller-assigned
+# task identity — standalone and run from many agents — not an observer/device-
+# scoped id. LMAP-based active-measurement platforms (e.g. broadband CPE probe
+# fleets) map onto this package; the package itself stays vendor-neutral.
+# Signal-shape precedent: active-measurement and flow tooling already emit
+# path/flow observations as both records and OTLP spans. Upstream coordination:
+# semconv #3682 (TCP metrics), #3740 (Autonomous System enrichment →
+# source.as.*/destination.as.*), #1721 (source.*/destination.* as the home for
+# third-party observation — see model/destination for the per-hop subject
+# enrichment).
 
 attributes:
 # --- Test identity & classification ------------------------------------
@@ -295,7 +305,7 @@ attributes:
     The per-hop latency a path/traceroute test reports. The jump in this value between consecutive hops localises where latency enters the path. Record/span-level (on a span carrier this is the span duration plus this explicit measure).
   examples: [0.0012, 0.0204]
 
-- key: network.test.path.hop.loss.ratio
+- key: network.test.path.hop.loss
   type: double
   stability: development
   brief: >

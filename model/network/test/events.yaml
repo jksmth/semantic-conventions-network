@@ -108,7 +108,7 @@ events:
 
     "Where did latency/loss enter the path" — the question a traceroute exists
     to answer — is the step-up in `network.test.path.hop.latency` /
-    `.loss.ratio` between consecutive hops.
+    `network.test.path.hop.loss` between consecutive hops.
   attributes:
   - ref: network.test.id
     requirement_level: recommended
@@ -118,7 +118,7 @@ events:
     requirement_level: required
   - ref: network.test.path.hop.latency
     requirement_level: recommended
-  - ref: network.test.path.hop.loss.ratio
+  - ref: network.test.path.hop.loss
     requirement_level: opt_in
   - ref: destination.address
     requirement_level: recommended

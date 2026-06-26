@@ -38,17 +38,33 @@ Extended packages (real `network.*` concepts, narrower device classes) build on 
 L2/STP, ARP/ND, VLAN/LAG/instance/tunnel, EVPN, MPLS/segment-routing, multicast, optical
 endpoint channels, PON/access and subscriber edge, WiFi, NAT, QoS, redundancy, session.
 
+## Planned optional packages
+
+Real `network.*` domains that are not in the stable core but are planned as optional
+packages once demand is evidenced:
+
+- **Optical line system / photonic transport** (`network-optical-line`) — the line system
+  *between* coherent endpoints: EDFA gain/tilt/total-power, ROADM degrees + WSS spectrum,
+  OMS/OTS layering, flexgrid spectrum/occupancy, span loss + fibre attributes, the
+  multi-ROADM lightpath, and the optical alarm family (LOS, amplifier-degraded, the APR/ALS
+  safety shutoff). Demand has materialized via production fibre-monitoring (OTDR /
+  remote-fibre-test) telemetry — span loss, fibre length, distance-to-fault, loss-budget
+  thresholds, route topology, and an RTU observer, none of which the endpoint channel can
+  carry. Built **reuse-first**: the lightpath is `network.path` (`type=optical_lightpath`,
+  already authored), the span/OTS is `network.link` (`type=optical`), the producer≠subject
+  RTU is `network.observer.*`, and optical alarms are `network.alarm` refinements. New
+  signal/medium quantities extend the unified `network.optical.*` namespace (`amplifier.*`,
+  `span.*`, `spectrum.*`, `fault.*`); the only new entity is `network.optical.amplifier`.
+  Anchored on OpenROADM / `openconfig-optical-amplifier` / `openconfig-wavelength-router` /
+  ITU-T G.872. It wraps and references the endpoint `network.optical.channel`; it does not
+  reshape it.
+
 ## Out of scope (reference or decline)
 
 These serve a small device population at large modelling cost, or belong to another
 standards body. They are deliberately excluded from the core so they stop generating
 pressure on it:
 
-- **Full optical line system / photonic transport** — the *endpoint coherent channel* is
-  in scope; the line system between endpoints (EDFA gain/tilt, ROADM degrees + WSS
-  spectrum, OMS/OTS layering, flexgrid, multi-ROADM lightpath) is an enormous specialist
-  domain (OpenROADM / `openconfig-optical-amplifier` / G.872). If demand materializes it
-  is a separate optional package, not part of the stable core.
 - **Full packet capture / payload (pcap)** — OTel does not carry captured packets:
   not the packet bytes, and not a capture-artifact pointer. pcap/pcapng already has
   its format and tooling; re-encoding captures as OTLP inflates size and loses every

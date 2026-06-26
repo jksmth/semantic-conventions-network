@@ -15,14 +15,17 @@ file_format: definition/2
 #     loss, spectrum) → `network-optical-line`. These wrap/reference the OCh
 #     channel; they do not change it.
 #
-# hw boundary: the transceiver is a hardware FRU.
-# Its environmental telemetry is `hw.*`, NOT redefined here:
-#   - module temperature  → hw.temperature (+ hw.temperature.limit, hw.sensor_location)
-#   - supply voltage (Vcc) → hw.voltage
-#   - module health/status → hw.status
-#   - serial / vendor / part → hw.serial_number / hw.vendor / hw.model
-# `network.optical.*` carries only the optical SIGNAL (power, osnr, ber, cd,
-# pmd, bias_current) — values `hw.*` has no concept of.
+# hw boundary: the transceiver is a hardware FRU. The split is by SOURCE:
+#   - transceiver-DOM diagnostics → `network.optical.*` (the DOM diagnostic set
+#     read together to assess an optic): power, osnr, ber, cd, pmd, bias_current,
+#     and the DOM environmentals temperature → network.optical.temperature and
+#     supply voltage (Vcc) → network.optical.voltage (+ their `.limit` companions).
+#   - generic hardware telemetry → `hw.*`, NOT redefined here: module
+#     health/status → hw.status; serial/vendor/part → hw.serial_number /
+#     hw.vendor / hw.model; and any non-DOM platform sensor (board, fan, PSU, the
+#     SFP-cage temperature) → hw.temperature / hw.voltage.
+# So the optical-module temperature/Vcc are always `network.optical.*`; only
+# generic ENTITY-MIB / ietf-hardware platform sensors stay `hw.*`.
 # See docs/architecture.md (namespace layering).
 #
 # Prior art: SFF-8472 (DOM), ITU-T G.698.2/G.709, OpenConfig

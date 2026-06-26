@@ -1,10 +1,12 @@
 ---
 file_format: definition/2
 metrics:
-# Optical SIGNAL metrics (hw.* has no concept of these). Module
-# environmental telemetry (temperature, voltage, status) is hw.* and is
-# intentionally NOT duplicated here. See docs/architecture.md (namespace
-# layering).
+# Optical SIGNAL + transceiver-DOM diagnostic metrics. The optical signal
+# values (power/osnr/ber/cd/pmd/bias) are quantities `hw.*` has no concept of;
+# the transceiver-DOM environmentals (temperature, voltage) are part of the
+# SAME DOM diagnostic set and live here too (see the DOM-environmentals note
+# below). Module STATUS and the non-DOM platform environmentals (board/fan/PSU
+# sensors) remain `hw.*`. See docs/architecture.md (namespace layering).
 - name: network.optical.power
   stability: development
   brief: >
@@ -16,9 +18,11 @@ metrics:
     optics it is often the only `network.optical.*` value reported (the
     coherent metrics below are opt-in and simply absent).
 
-    Warn/alarm thresholds for module temperature/voltage are `hw.*`
-    (`hw.temperature.limit`, `hw.status`); optical-power thresholds and the
-    threshold-crossing event are deferred to a later threshold/event pass.
+    Module temperature/voltage are the transceiver-DOM diagnostics
+    `network.optical.temperature` / `.voltage` (with their `.limit`
+    companions); module status is `hw.status`. Optical-power thresholds are
+    the `network.optical.power.limit` companion below; the threshold-crossing
+    event is `network.optical.threshold_crossed`.
   instrument: gauge
   unit: "dB[mW]"
   attributes:
@@ -81,6 +85,49 @@ metrics:
   entity_associations:
   - network.optical.channel
 
+# --- Transceiver-DOM environmentals (the optical diagnostic set) -------
+# Module temperature and supply voltage are part of the SAME transceiver DOM
+# diagnostic set as power/bias (SFF-8472 / bbf-hardware-transceivers) — an
+# operator reads them together to diagnose an optic — so they live in
+# `network.optical.*`, NOT `hw.*`. The discriminator is the SOURCE PATH: a
+# transceiver-DOM leaf is optical; a generic ENTITY-MIB / ietf-hardware platform
+# sensor (board, fan, PSU, the SFP-cage sensor) stays `hw.temperature` /
+# `hw.voltage`. On a device that exposes both (a platform SFP-cage sensor AND the
+# module DOM), the platform sensor is `hw.*` and the DOM reading is here — two
+# honest series, not a duplicate. See docs/architecture.md (namespace layering).
+- name: network.optical.temperature
+  stability: development
+  brief: >
+    Temperature of the optical transceiver module (DOM).
+  note: >
+    The SFF-8472 / `bbf-hardware-transceivers` module temperature, part of the transceiver DOM diagnostic set (read with `power`/`bias_current`/`voltage`). In `network.optical.*` rather than `hw.temperature` because it is a transceiver-DOM optical diagnostic, not a generic platform sensor; the board/fan/PSU/SFP-cage temperature stays `hw.temperature`.
+  instrument: gauge
+  unit: "Cel"
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.voltage
+  stability: development
+  brief: >
+    Supply voltage (Vcc) of the optical transceiver module (DOM).
+  note: >
+    The SFF-8472 DOM supply voltage. Same boundary as `network.optical.temperature`: a transceiver-DOM optical diagnostic, so `network.optical.*`; generic FRU rails (PSU/board) remain `hw.voltage`.
+  instrument: gauge
+  unit: "V"
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.laser_temperature
+  stability: development
+  brief: >
+    Laser / TEC temperature of the transmitting optic, when reported separately from the module temperature.
+  note: >
+    Opt-in sub-distinction within the optical DOM set: a module that exposes a distinct laser or TEC temperature reports it here, alongside the module-level `network.optical.temperature`.
+  instrument: gauge
+  unit: "Cel"
+  entity_associations:
+  - network.optical.channel
+
 # --- DOM threshold limits (the configured warn/alarm trip points) ------
 # The configured-limit companions to network.optical.power / .bias_current:
 # the SFP/SFP+ DOM (SFF-8472) high/low warn and alarm trip points. The
@@ -113,6 +160,34 @@ metrics:
     Amperes (A) — the same unit as `network.optical.bias_current`. `hw.limit_type` distinguishes the high/low alarm and warning trip points (SFF-8472 DOM: alarm -> `*.critical`, warning -> `*.degraded`). A bias-current high-alarm trip is the classic ageing-transmitter signal.
   instrument: gauge
   unit: "A"
+  attributes:
+  - ref: hw.limit_type
+    requirement_level: required
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.temperature.limit
+  stability: development
+  brief: >
+    Configured alarm/warning threshold for optical module temperature.
+  note: >
+    Unit `Cel` — the same unit as `network.optical.temperature`. `hw.limit_type` distinguishes the high/low alarm and warning trip points (SFF-8472 DOM: alarm -> `*.critical`, warning -> `*.degraded`). A module-temperature high-alarm trip is a cooling/airflow or ageing-optic signal.
+  instrument: gauge
+  unit: "Cel"
+  attributes:
+  - ref: hw.limit_type
+    requirement_level: required
+  entity_associations:
+  - network.optical.channel
+
+- name: network.optical.voltage.limit
+  stability: development
+  brief: >
+    Configured alarm/warning threshold for optical module supply voltage (Vcc).
+  note: >
+    Unit `V` — the same unit as `network.optical.voltage`. `hw.limit_type` distinguishes the high/low alarm and warning trip points (SFF-8472 DOM: alarm -> `*.critical`, warning -> `*.degraded`).
+  instrument: gauge
+  unit: "V"
   attributes:
   - ref: hw.limit_type
     requirement_level: required

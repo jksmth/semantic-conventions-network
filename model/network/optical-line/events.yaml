@@ -1,0 +1,40 @@
+---
+file_format: definition/2
+
+# network-optical-line events. The fibre line-system alarm family, refining the
+# shared `network.alarm` base event — a fibre break / high-loss / loss-budget
+# crossing located on a span. The endpoint DOM threshold crossing is the
+# separate `network.optical.threshold_crossed` (model/network/optical); this is
+# the BETWEEN-device fibre fault, associated with the optical `network.link`
+# (the span) and carrying the OTDR distance-to-fault.
+event_refinements:
+- id: network.optical.fiber_fault
+  ref: network.alarm
+  stability: development
+  brief: >
+    A fibre-span fault — a fibre break or high-loss/reflective event (cause=signal_loss), or the span loss crossing its configured budget (cause=threshold_crossed). The line-system analogue of the endpoint DOM threshold crossing, located on the span by an OTDR / fibre-monitoring test.
+  note: |
+    `cause=signal_loss` for a break / LOS, or `cause=threshold_crossed` for a
+    loss-budget crossing (then `network.alarm.threshold.value` =
+    `network.optical.span.loss.limit` and `network.alarm.observed.value` = the
+    measured `network.optical.span.loss`, both in `dB`).
+    `network.optical.fault.distance` carries the OTDR distance-to-fault (metres)
+    — the "where on the span". `network.alarm.specific_problem` carries the
+    verbatim source string; `severity=cleared` is the clear.
+
+    Producer≠subject: a fibre-monitoring remote test unit (OTDR) reports this
+    about a span it does not terminate — the RTU is `network.observer.*`, the
+    span is the `network.link` subject.
+  entity_associations:
+  - network.link
+  attributes:
+  - ref: network.alarm.cause
+    requirement_level: required
+  - ref: network.optical.fault.distance
+    requirement_level: recommended
+  - ref: network.alarm.threshold.value
+    requirement_level: recommended
+  - ref: network.alarm.observed.value
+    requirement_level: recommended
+  - ref: network.alarm.specific_problem
+    requirement_level: recommended

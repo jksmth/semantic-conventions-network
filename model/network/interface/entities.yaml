@@ -40,7 +40,12 @@ entities:
     requirement_level: recommended
   - ref: network.interface.speed
     requirement_level: recommended
+  # Duplex is the OPERATIONAL mode (full/half/unknown); auto_negotiate is the
+  # CONFIGURED auto-negotiation setting (the operator-intent sibling). Together
+  # they surface an auto-vs-forced duplex mismatch — the operational/config dual.
   - ref: network.interface.duplex
+    requirement_level: opt_in
+  - ref: network.interface.auto_negotiate
     requirement_level: opt_in
   - ref: network.interface.mtu
     requirement_level: recommended

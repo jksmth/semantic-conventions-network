@@ -69,7 +69,7 @@ metrics:
   entity_associations:
   - network.test
 
-- name: network.test.loss.ratio
+- name: network.test.loss
   stability: development
   brief: >
     Packet-loss ratio measured by an active test (0.0–1.0).

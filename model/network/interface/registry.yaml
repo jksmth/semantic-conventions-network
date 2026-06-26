@@ -190,15 +190,23 @@ attributes:
       value: "half"
       brief: Half duplex.
       stability: development
-    - id: auto
-      value: "auto"
-      brief: Auto-negotiation (result not yet determined or not reported).
+    - id: unknown
+      value: "unknown"
+      brief: The operational duplex mode could not be determined — the link is down or auto-negotiation has not completed.
       stability: development
   stability: development
   brief: >
-    The duplex mode of the interface.
+    The OPERATIONAL duplex mode of the interface — the mode the link is actually running in.
   note: >
-    Relevant on copper Ethernet interfaces. Irrelevant (and typically omitted) on fiber, coherent optical, wireless, and logical interfaces. Half/full mismatch is a classic L1/L2 fault.
+    The live, negotiated/operational duplex, NOT a configuration value: SNMP EtherLike-MIB `dot3StatsDuplexStatus` and OpenConfig `negotiated-duplex-mode`. `full` or `half` when the link is up; `unknown` when it cannot be determined — a down interface or auto-negotiation not yet complete (the EtherLike-MIB `dot3StatsDuplexStatus.unknown(1)` case; OpenConfig omits the leaf entirely in this state). `auto` is deliberately NOT a member here: auto-negotiation is a *configuration* setting carried separately by `network.interface.auto_negotiate` (the OpenConfig `auto-negotiate` boolean), and the `full`/`half`/`unknown` value here is the *operational result* of that negotiation. Comparing the two surfaces an auto/forced duplex mismatch. Relevant on copper Ethernet interfaces. Irrelevant (and typically omitted) on fiber, coherent optical, wireless, and logical interfaces. Half/full mismatch is a classic L1/L2 fault.
+
+- key: network.interface.auto_negotiate
+  type: boolean
+  stability: development
+  brief: >
+    Whether IEEE 802.3 auto-negotiation is configured (enabled) on the interface.
+  note: >
+    The CONFIGURED auto-negotiation setting (OpenConfig `auto-negotiate`; IEEE MAU-MIB `ifMauAutoNegAdminStatus`) — operator intent, not an operational reading. `true` = the interface negotiates speed and duplex with its link partner; `false` = speed/duplex are forced. The *operational result* of negotiation is reported separately by `network.interface.duplex` (full/half/unknown) and the `network.interface.speed` gauge. A classic L1/L2 fault is an auto-vs-forced mismatch between the two ends of a link; comparing this configured value against the operational duplex surfaces it. Relevant on copper Ethernet; omitted where auto-negotiation does not apply (fiber/coherent/wireless/logical).
 
 - key: network.interface.mtu
   type: int

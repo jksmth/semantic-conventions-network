@@ -1,0 +1,57 @@
+---
+file_format: definition/2
+metrics:
+# Fibre SPAN / OTS metrics. The native unit of a line system is PER-SPAN
+# (between two boxes), unlike the per-carrier endpoint metrics — so these
+# associate with the optical `network.link` (the span), not
+# `network.optical.channel`. Span loss is the day-to-day preventive signal: a
+# rising span loss is a connector or splice degrading, or a fibre about to fail.
+- name: network.optical.span.loss
+  stability: development
+  brief: >
+    Total optical loss of the fibre span (end to end), in dB.
+  note: >
+    The span / OTS insertion loss between its two terminations — an OTDR / fibre-monitoring measurement, or a computed launch-minus-receive. Associates with the optical `network.link` (type=optical). Unit `dB` (a ratio), not `dB[mW]`. The configured budget is `network.optical.span.loss.limit`.
+  instrument: gauge
+  unit: "dB"
+  entity_associations:
+  - network.link
+
+- name: network.optical.span.length
+  stability: development
+  brief: >
+    Physical length of the fibre span, in metres.
+  note: >
+    The measured (OTDR) or recorded fibre length of the span. Metres (UCUM `m`); a source reporting kilometres is converted (×1000). Associates with the optical `network.link`.
+  instrument: gauge
+  unit: "m"
+  entity_associations:
+  - network.link
+
+- name: network.optical.span.return_loss
+  stability: development
+  brief: >
+    Optical return loss (ORL) of the span, in dB.
+  note: >
+    The ratio of incident to reflected power on the span — a low ORL (a strong reflection from a dirty/ageing connector or a fibre end) degrades coherent reception. Unit `dB`. Associates with the optical `network.link`.
+  instrument: gauge
+  unit: "dB"
+  entity_associations:
+  - network.link
+
+# Configured loss BUDGET — the threshold the live span loss is read against, the
+# OTS analogue of the DOM `network.optical.power.limit`. `hw.limit_type` selects
+# the alarm vs warning trip point, reused not redefined.
+- name: network.optical.span.loss.limit
+  stability: development
+  brief: >
+    Configured loss budget / threshold for the fibre span, in dB.
+  note: >
+    The provisioned span-loss budget; a live `network.optical.span.loss` crossing it raises `network.optical.fiber_fault` (cause=threshold_crossed). Unit `dB`, the same as `network.optical.span.loss`. `hw.limit_type` distinguishes the alarm vs warning trip point.
+  instrument: gauge
+  unit: "dB"
+  attributes:
+  - ref: hw.limit_type
+    requirement_level: required
+  entity_associations:
+  - network.link

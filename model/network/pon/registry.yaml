@@ -9,7 +9,7 @@ file_format: definition/2
 #     ordinary `network.optical.channel` + `network.optical.power` (direction),
 #     with `network.optical.wavelength` carrying the PON band plan
 #     (GPON 1490↓/1310↑, XGS-PON 1577↓/1270↑).
-#   - module temp/Vcc/status → hw.*.
+#   - module status → hw.*; DOM temp/Vcc → network.optical.temperature/.voltage.
 # This package adds only the genuinely PON-specific optical signals: the
 # burst-mode upstream RSSI (a head-end measurement) and PON BIP-8/FEC link
 # quality (the PON analogue of coherent BER).
