@@ -179,3 +179,40 @@ metrics:
     requirement_level: required
   entity_associations:
   - network.interface
+
+- name: network.pon.onu.count
+  stability: development
+  brief: >
+    Number of ONUs on the PON port, by activation state.
+  note: |
+    The OLT-side aggregate roll-up of ONU activation state per PON port — the
+    "how many ONUs are operational vs offline on this tree" signal. Summing
+    across all `network.pon.onu.state` values yields the total ONU count on the
+    port; filtering `state=operational` gives the active count and the
+    complement gives the inactive count. The active/inactive *rate* is derived
+    downstream (inactive / total), not stored — deliberately, since it is
+    trivially computable and misleading on tiny denominators.
+
+    The aggregate companion to the per-ONU `network.pon.onu.state` status gauge
+    (whose subject is the ONU's own `network.device`): this counts ONUs and
+    associates with the shared PON-port `network.interface` (the channel pair /
+    channel termination), the same subject as `network.pon.capacity`.
+    Dimensioned by the low-cardinality `network.pon.onu.state` and optionally
+    `network.pon.type` (the band plan of the port) — never by per-ONU identity.
+
+    Follows the OTel status-metrics / count-of-a-thing pattern
+    (`{namespace}.{object}.count`, e.g. `network.access.session.count`): an
+    UpDownCounter dimensioned by state, not a pluralised gauge. OLT-measured and
+    relayed over OMCI; the OLT is `network.observer` (`collection.method=omci`).
+
+    Prior art: Nokia ISAM `oper_NumberOfOnts_*` (active / inactive ONT counts
+    per channel pair).
+  instrument: updowncounter
+  unit: "{onu}"
+  attributes:
+  - ref: network.pon.onu.state
+    requirement_level: required
+  - ref: network.pon.type
+    requirement_level: recommended
+  entity_associations:
+  - network.interface
